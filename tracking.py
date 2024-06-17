@@ -51,7 +51,7 @@ K_p_vx = 1       # Maximum forward velocity in m/s
 R_stop = 0.8    # Radius of stop forward velocity v_x
 
 # Load YOLOv8 compiled as a TensorRT Engine for maximum GPU efficiency
-model = YOLO('yolov8n.engine', task='detect')
+model = YOLO('yolo26n.engine', task='detect')
 
 # Initialize the Custom Tracker (The Visual Memory + Physics Engine)
 MAX_TIMEOUT = 50   
@@ -107,7 +107,7 @@ prev_time_fps = 0
 # calibration_areas = []          # Array to store the data
 # CALIBRATION_SAMPLES = 100       # Number of frames
 OPTICAL_CONSTANT = 75000*(1.5)**2    
-DESIRED_STOPPING_DISTANCE = 1.7   # [m]
+DESIRED_STOPPING_DISTANCE = 0.05   # [m]
 TARGET_AREA = OPTICAL_CONSTANT / (DESIRED_STOPPING_DISTANCE**2)             # Default value
 
 
