@@ -12,6 +12,8 @@ import time
 import math
 from ultralytics import YOLO
 import numpy as np
+import sys
+import select
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from pymavlink import mavutil
 
@@ -45,7 +47,7 @@ K_p_yaw = 1     # Proportional gain for yaw rate
 K_d_yaw = 0.05  # Derivative gain for yaw rate
 K_p_vz = 1      # Proportional gain for vertical velocity
 K_d_vz = 0.05   # Derivative gain for vertical velocity
-V_max = 1       # Maximum forward velocity in m/s
+K_p_vx = 1       # Maximum forward velocity in m/s
 R_stop = 0.8    # Radius of stop forward velocity v_x
 
 # Load YOLOv8 compiled as a TensorRT Engine for maximum GPU efficiency
@@ -99,6 +101,15 @@ prev_error_y = 0
 prev_error_x = 0   
 prev_time = time.time()
 prev_time_fps = 0
+
+# Calibration area-distance parameters
+# is_calibrating = False          # Trigger switch
+# calibration_areas = []          # Array to store the data
+# CALIBRATION_SAMPLES = 100       # Number of frames
+OPTICAL_CONSTANT = 75000*(1.5)**2    
+DESIRED_STOPPING_DISTANCE = 1.7   # [m]
+TARGET_AREA = OPTICAL_CONSTANT / (DESIRED_STOPPING_DISTANCE**2)             # Default value
+
 
 while cap.isOpened():
     success, frame = cap.read()
@@ -175,11 +186,12 @@ while cap.isOpened():
             msg = master.recv_match(type='ATTITUDE', blocking=False)
             if msg:
                 current_pitch_rad = msg.pitch
+                # current_pitch_rad = math.radians(-15)
             
             # Extract the stabilized, filtered bounding box from DeepSORT
             ltrb = track.to_ltrb() 
             x1, y1, x2, y2 = ltrb
-            
+                        
             # Calculate the current physical center of the target
             bb_center_x = int((x1 + x2) / 2)
             bb_center_y = int((y1 + y2) / 2)
@@ -193,9 +205,10 @@ while cap.isOpened():
             # Error normalization in range [-1,1]
             e_x = error_x / CENTER_X
             e_y = error_y / CENTER_Y
+            e_y_compensated = e_y - math.tan(current_pitch_rad)
 
             # Calculate the error magnitude
-            e_mag = math.sqrt(e_x**2 + e_y**2)
+            e_mag = math.sqrt(e_x**2 + e_y_compensated**2)
             e_mag = min(1.0, e_mag)
 
             # Calculate the delta t
@@ -203,25 +216,17 @@ while cap.isOpened():
             dt = current_time - prev_time
 
             # Calculate the derivative
-            if dt > 0:
-                derivative_y = (e_y - prev_error_y) / dt
+            if 0 < dt < 0.5:
+                derivative_y = (e_y_compensated - prev_error_y) / dt
                 derivative_x = (e_x - prev_error_x) / dt
             else:
                 derivative_y = 0
                 derivative_x = 0
 
-            # # Calculate the sign of the adjustment
-            # sign_x = 1 if e_x >= 0 else -1
-            # sign_y = 1 if e_y >= 0 else -1
-            # # Adjust the object in the frame center
-            # omega_z = K_yaw * sign_x * (e_x**2)
-            # v_z = k_vz * sign_y * (e_y**2)
-
             # Implementation PD controller for omega_z and v_z
-            omega_z = K_p_yaw * e_x + K_d_yaw * derivative_x      
-            v_z = K_p_vz * e_y + K_d_vz * derivative_y
-            print(f"Raw v_z: {v_z:.2f} m/s")
-
+            omega_z = K_p_yaw * e_x + K_d_yaw * derivative_x
+            v_z = K_p_vz * e_y_compensated + K_d_vz * derivative_y
+            
             # Deadzone for velocities avoiding micro movements
             if abs(omega_z) < 0.03:
                 omega_z = 0
@@ -229,13 +234,32 @@ while cap.isOpened():
                 v_z = 0
             
             # Setting forward velocity
+            w = x2 - x1
+            h = y2 - y1
+            current_area = w*h
+            # print(f"Area: {current_area}")
+
+            e_area = (TARGET_AREA - current_area) / TARGET_AREA
+            v_x_request = K_p_vx * e_area
+
+            # Distance deadzone: target area
+            if abs(e_area) < 0.05:
+                v_x_request = 0.0
+
+            # Speed limit for center alignment
             if e_mag >= R_stop:
-                v_x = 0.0 # Stop drone if target close to the edge
+                v_x_limit = 0.0 # Stop drone if target close to the edge
             else:
                 e_scaled = e_mag / R_stop
-                v_x = V_max * (1 - e_scaled**2)
+                v_x_limit = K_p_vx * (1 - e_scaled**2)
 
-            print(f"Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s  | Pitch: {current_pitch_rad*180/3.14:.2f} deg")
+            #  Choosing the safest value of velocity
+            if v_x_request > 0:
+                v_x = min(v_x_request, v_x_limit)
+            else:
+                v_x = max(v_x_request, -v_x_limit)
+
+            print(f"Pitch: {current_pitch_rad*180/3.14:.2f} deg | Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
 
             # Send the MAVLink command
             master.mav.set_position_target_local_ned_send(
@@ -249,7 +273,7 @@ while cap.isOpened():
             )
 
             # Update the memory states
-            prev_error_y = e_y
+            prev_error_y = e_y_compensated
             prev_error_x = e_x
             prev_time = current_time
 
@@ -294,10 +318,7 @@ while cap.isOpened():
 
     # Send via TCP
     client_socket.sendall(message)
+    
         
-    # cv2.imshow(window_name, frame)
-    # if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty(window_name, cv2.WND_PROP_AUTOSIZE) == -1:
-    #     break
-
 cap.release()
 cv2.destroyAllWindows()
