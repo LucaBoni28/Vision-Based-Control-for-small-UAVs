@@ -34,13 +34,16 @@ class CommandReceiver:
 
     # Polls for a click from the Ground Station, returning (norm_x, norm_y) if a click arrived since the last call, else None
     def poll_click(self):
-        """Returns (norm_x, norm_y) if a click arrived since the last call, else None."""
         latest = None
         while True:
             try:
                 data, _addr = self._socket.recvfrom(1024)
+                print(f"Data: {data}")
             except BlockingIOError:
                 break
             if len(data) == _CLICK_SIZE:
                 latest = struct.unpack(_CLICK_FORMAT, data)
+                print(f"Click poll click: {latest}")
+            else:
+                print(f"Error: {_CLICK_SIZE}")
         return latest

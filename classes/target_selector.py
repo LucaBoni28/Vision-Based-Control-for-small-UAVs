@@ -87,6 +87,8 @@ class NearestObjectSelector(TargetSelector):
 
         return max(tracks, key=area).id
 
+
+
 # Factory function that creates the appropriate TargetSelector instance based on the configuration and optional CommandReceiver
 def create_target_selector(config, command_receiver: Optional[CommandReceiver] = None) -> TargetSelector:
     mode = config.target_selection.mode

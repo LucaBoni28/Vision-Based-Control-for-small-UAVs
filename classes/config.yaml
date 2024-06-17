@@ -2,6 +2,14 @@
 # Drone tracking system — configuration
 # =============================================================================
 
+# GStreamer CSI pipeline parameters (Jetson nvarguscamerasrc)
+camera:
+  sensor_id: 0
+  width: 1280
+  height: 960
+  framerate: 30
+
+# Mavlink connection
 mavlink:
   connection: "udpin:0.0.0.0:14551"
   source_system: 255
@@ -13,12 +21,6 @@ video_link:
   host: "172.29.249.199"
   port: 5005
 
-# GStreamer CSI pipeline parameters (Jetson nvarguscamerasrc)
-camera:
-  sensor_id: 0
-  width: 1280
-  height: 960
-  framerate: 30
 
 model:
   path: "yolo26n.engine"
@@ -78,13 +80,13 @@ display:
 #              bounding box). Intended for autonomous waypoint missions
 #              (main_mission.py) with no operator present to click
 target_selection:
-  mode: "auto"
-  max_click_distance_px: 150 # Threshold for accepting a click as valid (in pixels)
+  mode: "manual"
+  max_click_distance_px: 50 # Threshold for accepting a click as valid (in pixels)
 
 # Return channel: ground station -> Jetson, carrying operator clicks. Only used when target_selection.mode is "manual"
 # This is separate from video_link (which only flows Jetson -> ground station).
 command_link:
-  jetson_host: "192.168.1.50"   # IP of the Jetson as seen from the ground station — SET THIS
+  jetson_host: "172.29.249.164"   # IP of the Jetson as seen from the ground station 
   port: 5006
 
 # Multi-waypoints mission is intended for autonomous operation with no operator present to click on a target.

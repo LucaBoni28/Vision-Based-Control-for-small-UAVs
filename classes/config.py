@@ -12,21 +12,6 @@ from typing import List
 
 import yaml
 
-
-@dataclass
-class MavlinkConfig:
-    connection: str
-    source_system: int
-    source_component: int
-    attitude_stream_rate_hz: int
-
-
-@dataclass
-class VideoLinkConfig:
-    host: str
-    port: int
-
-
 @dataclass
 class CameraConfig:
     sensor_id: int
@@ -47,6 +32,18 @@ class CameraConfig:
             "appsink"
         )
 
+@dataclass
+class MavlinkConfig:
+    connection: str
+    source_system: int
+    source_component: int
+    attitude_stream_rate_hz: int
+
+
+@dataclass
+class VideoLinkConfig:
+    host: str
+    port: int
 
 @dataclass
 class ModelConfig:

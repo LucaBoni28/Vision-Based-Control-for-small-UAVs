@@ -19,12 +19,12 @@ class Attitude:
     pitch: float  # radians
     yaw: float    # radians, 0 = North, clockwise positive (compass convention)
 
-
 @dataclass
 class GlobalPosition:
     lat: float
     lon: float
     relative_alt_m: float
+
 
 class FlightController:
     # Initializes the FlightController with the given MAVLink configuration
