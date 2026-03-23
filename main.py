@@ -21,7 +21,6 @@ gst_pipeline = (
     "appsink"
 )
 
-
 print("Opening CSI Camera...")
 cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
 
@@ -51,32 +50,59 @@ while cap.isOpened():
 
     # Extract the data for the current frame
     frame_results = results[0]
+    annotated_frame = results[0].plot()
+
+   # --- FLIGHT CONTROL LOGIC ---
     
-    # Loop through every single detected object in this frame
-    for box in frame_results.boxes:
-        
-        # 1. Bounding Box Coordinates
-        # .xyxy[0] grabs the tensor array [x1, y1, x2, y2]
-        # .tolist() pulls it from the GPU into a standard Python list
-        coords = box.xyxy[0].tolist()
-        
-        # Convert the raw floats into integers because pixels are whole numbers
-        x1, y1, x2, y2 = map(int, coords)
-        
-        # 2. Confidence Score
-        # .conf[0] grabs the tensor, float() converts it to a standard Python decimal
+    # Determine the camera's true center (The Zero Point)
+    frame_height, frame_width = frame.shape[:2]
+    frame_center_x = frame_width // 2
+    frame_center_y = frame_height // 2
+
+    # Variables to track our best target
+    best_target_coords = None
+    max_area = 0
+    confidence_threshold = 0.85 # 85% minimum confidence
+
+    # ilter and Select the Best Target
+    for box in results[0].boxes:
         confidence = float(box.conf[0])
         
-        # 3. Class ID
-        # int() converts the tensor ID into a standard Python integer
-        class_id = int(box.cls[0])
+        # Ignore weak detections
+        if confidence < confidence_threshold:
+            continue
+            
+        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
         
-        # Output the mathematical truth to the terminal
-        if confidence > 0.90:
-            print(f"Class: {class_id} | Conf: {confidence:.2f} | Coords: [{x1}, {y1}, {x2}, {y2}]")
+        # Calculate the size of the bounding box
+        box_area = (x2 - x1) * (y2 - y1)
+        
+        # Save the max area Bounding Box coordinates
+        if box_area > max_area:
+            max_area = box_area
+            best_target_coords = (x1, y1, x2, y2)
 
+    # Calculate the Error Vector
+    if best_target_coords is not None:
+        x1, y1, x2, y2 = best_target_coords
+        
+        # Find the center of our chosen target
+        obj_center_x = (x1 + x2) // 2
+        obj_center_y = (y1 + y2) // 2
+        
+        # Calculate how far off-center the target is
+        error_x = obj_center_x - frame_center_x
+        error_y = obj_center_y - frame_center_y
+        
+        # Output the flight command data
+        print(f"Target Locked | Error Vector -> X: {error_x}px, Y: {error_y}px")
+
+        # Optional: Draw a line from the center of the screen to the target
+        cv2.arrowedLine(annotated_frame, (obj_center_x, obj_center_y), (frame_center_x, frame_center_y), (0, 0, 255), 5, tipLength=0.05)
+        
     # Extract the frame
-    annotated_frame = results[0].plot()
+    # annotated_frame = results[0].plot()
+    
 
     # Push to the window
     cv2.imshow(window_name, annotated_frame)
