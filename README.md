@@ -14,10 +14,10 @@ Future work may extend the system to outdoor experiments, where GPS positioning 
 more advanced autonomous navigation.
 
 Tasks to be performed by the student:
-    • Review state-of-the-art vision-based drone control and object detection methods.
-    • Set up the NVIDIA Jetson Orin NX system and interface it with the Raspberry Pi Camera V2.
-    • Implement YOLO-based object detection for real-time processing and determine relative object positions.
-    • Develop a vision-based control algorithm that keeps the detected object at the center of the camera image.
-    • Generate MAVLink commands to control the autopilot.
-    • Perform indoor tests on a bench-top model using the NVIDIA Jetson Orin NX and Raspberry Pi Camera V2 system, including the detection of indoor shapes and
+- Review state-of-the-art vision-based drone control and object detection methods.
+- Set up the NVIDIA Jetson Orin NX system and interface it with the Raspberry Pi Camera V2.
+- Implement YOLO-based object detection for real-time processing and determine relative object positions.
+- Develop a vision-based control algorithm that keeps the detected object at the center of the camera image.
+- Generate MAVLink commands to control the autopilot.
+- Perform indoor tests on a bench-top model using the NVIDIA Jetson Orin NX and Raspberry Pi Camera V2 system, including the detection of indoor shapes and
     generation of the corresponding MAVLink control commands. 
