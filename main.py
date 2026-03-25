@@ -97,8 +97,8 @@ while cap.isOpened():
         # Output the flight command data
         print(f"Target Locked | Error Vector -> X: {error_x}px, Y: {error_y}px")
 
-        # Optional: Draw a line from the center of the screen to the target
-        cv2.arrowedLine(annotated_frame, (obj_center_x, obj_center_y), (frame_center_x, frame_center_y), (0, 0, 255), 5, tipLength=0.05)
+        # Optional: Draw a line from the targer to the center of the screen
+        cv2.arrowedLine(annotated_frame, (obj_center_x, frame_center_y), (frame_center_x, obj_center_y), (0, 0, 255), 5, tipLength=0.05)
         
     # Extract the frame
     # annotated_frame = results[0].plot()

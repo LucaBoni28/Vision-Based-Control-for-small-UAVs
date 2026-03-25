@@ -1,25 +1,24 @@
+#########################
+
+# Author: Luca Boninsegna
+# Date:   25/03/26
+# Descr:  Simple takeoff at a given altitude, then landing
+
+#########################
+
 from pymavlink import mavutil
 import time
 
-# Define the Hardware Port and Baud Rate
-#port = '/dev/ttyACM0'  
-#baud_rate = 115200
-#print(f"Attempting to open MAVLink bridge on {port}...")
-# Initialize the Conection
-#master = mavutil.mavlink_connection(port, baud=baud_rate)
 
 # Virtual SITL Connection
 master = mavutil.mavlink_connection('udpin:0.0.0.0:14550')
 
+# Waiting for a valid MAVLink heartbeat packet
 print("Bridge open. Listening for ArduPilot heartbeat...")
-
-# 3. Wait for the Pulse
-# This function physically blocks the code from moving forward until 
-# a valid MAVLink heartbeat packet is successfully decoded.
 master.wait_heartbeat()
 
-# Confirm Telemetry
-print("✅ TARGET ACQUIRED: Heartbeat Received!")
+# Connection confirmation
+print("TARGET ACQUIRED: Heartbeat Received!")
 print(f"System ID: {master.target_system}")
 print(f"Component ID: {master.target_component}")
 
@@ -36,7 +35,15 @@ master.mav.set_mode_send(
 print("Command Sent: Switched to GUIDED mode")
 time.sleep(2)
 
-# Arm the Motors (MAV_CMD_COMPONENT_ARM_DISARM)
+# Force RC channels (Roll, Pitch, Throttle, Yaw) to neutral
+master.mav.rc_channels_override_send(
+    master.target_system,
+    master.target_component,
+    1500, 1500, 1000, 1500, 0, 0, 0, 0
+)
+time.sleep(1)
+
+# Arm the motors
 master.mav.command_long_send(
     master.target_system, 
     master.target_component,
@@ -47,8 +54,8 @@ master.mav.command_long_send(
 print("Command Sent: Motors ARMED")
 time.sleep(2)
 
-# Takeoff Command (MAV_CMD_NAV_TAKEOFF)
-target_altitude = 11 # in meters
+# Takeoff command
+target_altitude = 10 # in meters
 master.mav.command_long_send(
     master.target_system, 
     master.target_component,
@@ -59,10 +66,10 @@ master.mav.command_long_send(
 print(f"Command Sent: TAKEOFF to {target_altitude} meters")
 
 # Drone hovers at the target altitude
-print("Hovering for 10 seconds...")
-time.sleep(30)
+print("Hovering for few seconds...")
+time.sleep(20)
 
-# Command Land (MAV_CMD_NAV_LAND)
+# Land command
 print("Command Sent: Initiating LAND sequence")
 master.mav.command_long_send(
     master.target_system, 
