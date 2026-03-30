@@ -1,3 +1,11 @@
+#########################
+
+# Author: Luca Boninsegna
+# Date:   25/03/26
+# Descr:  Running Yolo models and calculate the error between BB and camera frame centers
+
+#########################
+
 from ultralytics import YOLO
 import cv2
 
@@ -8,7 +16,7 @@ import cv2
 #model.export(format="engine")  # creates 'yolov8n.engine'
 
 # Load the exported TensorRT model
-trt_model = YOLO("yolov8n.engine", task="detect")
+trt_model = YOLO("yolo26n.engine", task="detect")
 
 # Setting Gstreamer Pipeline
 gst_pipeline = (
@@ -51,9 +59,7 @@ while cap.isOpened():
     # Extract the data for the current frame
     frame_results = results[0]
     annotated_frame = results[0].plot()
-
-   # --- FLIGHT CONTROL LOGIC ---
-    
+   
     # Determine the camera's true center (The Zero Point)
     frame_height, frame_width = frame.shape[:2]
     frame_center_x = frame_width // 2
@@ -64,7 +70,7 @@ while cap.isOpened():
     max_area = 0
     confidence_threshold = 0.85 # 85% minimum confidence
 
-    # ilter and Select the Best Target
+    # Select the Best Target
     for box in results[0].boxes:
         confidence = float(box.conf[0])
         
@@ -86,24 +92,20 @@ while cap.isOpened():
     if best_target_coords is not None:
         x1, y1, x2, y2 = best_target_coords
         
-        # Find the center of our chosen target
+        # Find the BB center of the chosen target
         obj_center_x = (x1 + x2) // 2
         obj_center_y = (y1 + y2) // 2
         
-        # Calculate how far off-center the target is
+        # Calculate the error between BB and camera frame center
         error_x = obj_center_x - frame_center_x
         error_y = obj_center_y - frame_center_y
         
-        # Output the flight command data
+        # Output the errors
         print(f"Target Locked | Error Vector -> X: {error_x}px, Y: {error_y}px")
 
-        # Optional: Draw a line from the targer to the center of the screen
+        # Draw the direction to center the target object 
         cv2.arrowedLine(annotated_frame, (obj_center_x, frame_center_y), (frame_center_x, obj_center_y), (0, 0, 255), 5, tipLength=0.05)
         
-    # Extract the frame
-    # annotated_frame = results[0].plot()
-    
-
     # Push to the window
     cv2.imshow(window_name, annotated_frame)
 
