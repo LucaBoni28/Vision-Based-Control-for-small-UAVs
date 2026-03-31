@@ -14,7 +14,8 @@ from pymavlink import mavutil
 
 # Connection to Pixhawk
 print("Connecting to Flight Controller...")
-master = mavutil.mavlink_connection('/dev/ttyACM0',baud=115200)
+# master = mavutil.mavlink_connection('/dev/ttyACM0',baud=115200)
+master = mavutil.mavlink_connection('udp:127.0.0.1:14551')
 
 # Wait for valid MAVLink heartbeat packet
 print("Bridge open. Listening for ArduPilot heartbeat...")
