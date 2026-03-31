@@ -7,9 +7,28 @@
 
 import cv2
 import time
+import math
 from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
+from pymavlink import mavutil
 
+# Connection to Pixhawk
+print("Connecting to Flight Controller...")
+master = mavutil.mavlink_connection('/dev/ttyACM0',baud=115200)
+
+# Wait for valid MAVLink heartbeat packet
+print("Bridge open. Listening for ArduPilot heartbeat...")
+master.wait_heartbeat()
+
+# Connection confirmation 
+print("TARGET ACQUIRED: Heartbeat Received!")
+print(f"System ID: {master.target_system}")
+print(f"Component ID: {master.target_component}")
+
+# Control gain parameter
+K_yaw = 1.0     # Gain for the yaw angle
+k_vz = 0.5      # Gain for vertical velocity
+V_max = 1.0     # Maximum forward velocity in m/s
 
 # Load YOLOv8 compiled as a TensorRT Engine for maximum GPU efficiency
 model = YOLO('yolov8n.engine', task='detect')
@@ -67,12 +86,12 @@ while cap.isOpened():
     CENTER_X = img_w // 2
     CENTER_Y = img_h // 2
     
-    # Calculate System Loop Speed (Critical for ArduPilot stability)
+    # Calculate FPS
     current_time = time.time()
     fps = 1.0 / (current_time - prev_time)
     prev_time = current_time
 
-    # Pure Detection: YOLO finds the object (Class 0 = Person) independently of tracking
+    # YOLO finds the object (Class 0 = Person) independently of tracking
     results = model.predict(frame, classes=[0], conf=0.4, verbose=False)
     
    
@@ -144,6 +163,43 @@ while cap.isOpened():
             
             print(f"ID: {track_id} | Err X: {error_x:6.2f} | Err Y: {error_y:6.2f}")
             
+            # Error normalization in range [-1,1]
+            e_x = error_x / CENTER_X
+            e_y = error_y / CENTER_Y
+
+            # Calculate the error magnitude
+            e_mag = math.sqrt(e_x**2 + e_y**2)
+            e_mag = min(1.0, e_mag)
+
+            # Calculate the sign of the adjustment
+            sign_x = 1 if e_x > 1 else -1
+            sign_y = 1 if e_y > 1 else -1
+
+            # Adjust the object in the center
+            omega_z = K_yaw * sign_x * (e_x**2)
+            v_z = k_vz * sign_y * (e_y**2)
+
+            # Setting forward velocity
+            R_stop = 0.8
+            if e_mag >= R_stop:
+                v_x = 0.0 # Stop drone if target close to the edge
+            else:
+                e_scaled = e_mag / R_stop
+                v_x = V_max * (1 - e_scaled**2)
+
+            print(f"Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
+
+            # Send the MAVLink command
+            master.mav.set_position_target_local_ned_send(
+                0, master.target_system, master.target_component,
+                mavutil.mavlink.MAV_FRAME_BODY_NED,
+                0b0000111111000111,
+                0, 0, 0,
+                v_x, 0.0, v_z,
+                0, 0, 0,
+                0, omega_z
+            )
+
             # Visual GUI Debugging
             cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
             cv2.putText(frame, f"ID: {track_id}", (int(x1), int(y1) - 10), 
@@ -153,11 +209,23 @@ while cap.isOpened():
     # UI Overlay
     cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
+
     # Coasting & Memory Decay Logic
     # If the target is lost, we increment the timer
     if not target_found_this_frame and locked_id is not None:
         timeout_frames += 1
         print(f"Target lost... {timeout_frames}/{MAX_TIMEOUT}")
+
+        # Brake the drone and hovering until new target is detected
+        master.mav.set_position_target_local_ned_send(
+                0, master.target_system, master.target_component,
+                mavutil.mavlink.MAV_FRAME_BODY_NED,
+                0b0000111111000111,
+                0, 0, 0,
+                0.0, 0.0, 0.0,
+                0, 0, 0,
+                0, 0.0
+            )
     
         # Reset to find a new target
         if timeout_frames > MAX_TIMEOUT:

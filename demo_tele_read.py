@@ -16,7 +16,7 @@ port = '/dev/ttyACM0'
 baud_rate = 115200
 print(f"Attempting to open MAVLink bridge on {port}...")
 
-# Initialize the Conection
+# Initialize the Connection
 master = mavutil.mavlink_connection(port, baud=baud_rate)
 
 # Waiting for a valid MAVLink heartbeat packet
