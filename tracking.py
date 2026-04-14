@@ -6,6 +6,8 @@
 ###############################################################################
 
 import cv2
+import socket
+import struct
 import time
 import math
 from ultralytics import YOLO
@@ -64,10 +66,16 @@ if not cap.isOpened():
     exit()
 
 # UI Setup
-window_name = "DeepSORT Vision"
-cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-cv2.resizeWindow(window_name, 1280, 720) 
-cv2.moveWindow(window_name, 100, 100)
+TCP_IP = "172.29.249.199"
+TCP_PORT = 5005
+
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client_socket.connect((TCP_IP,TCP_PORT))
+
+# window_name = "DeepSORT Vision"
+# cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+# cv2.resizeWindow(window_name, 1280, 720) 
+# cv2.moveWindow(window_name, 100, 100)
 
 # State Machine Initialization
 locked_id = None            
@@ -176,7 +184,7 @@ while cap.isOpened():
             sign_x = 1 if e_x > 1 else -1
             sign_y = 1 if e_y > 1 else -1
 
-            # Adjust the object in the center
+            # Adjust the object in the centerwindow_name
             omega_z = K_yaw * sign_x * (e_x**2)
             v_z = k_vz * sign_y * (e_y**2)
 
@@ -233,10 +241,19 @@ while cap.isOpened():
             print("TARGET PURGED FROM MEMORY. SEARCHING FOR NEW TARGET...")
             locked_id = None 
 
-    cv2.imshow(window_name, frame)
-    
-    if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty(window_name, cv2.WND_PROP_AUTOSIZE) == -1:
-        break
+    # Compress the frame to JPEG to save network bandwidth
+    ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    frame_data = buffer.tobytes()
+
+    # Pack the size of the frame, then attach the frame data
+    message = struct.pack(">L", len(frame_data)) + frame_data
+
+    # Send via TCP
+    client_socket.sendall(message)
+        
+    # cv2.imshow(window_name, frame)
+    # if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty(window_name, cv2.WND_PROP_AUTOSIZE) == -1:
+    #     break
 
 cap.release()
 cv2.destroyAllWindows()
