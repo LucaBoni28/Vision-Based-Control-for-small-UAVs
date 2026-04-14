@@ -17,7 +17,7 @@ from pymavlink import mavutil
 # Connection to Pixhawk
 print("Connecting to Flight Controller...")
 # master = mavutil.mavlink_connection('/dev/ttyACM0',baud=115200)
-master = mavutil.mavlink_connection('udp:127.0.0.1:14551')
+master = mavutil.mavlink_connection('udp:127.0.0.1:14551', source_system=1, source_component=1)
 
 # Wait for valid MAVLink heartbeat packet
 print("Bridge open. Listening for ArduPilot heartbeat...")
@@ -198,6 +198,11 @@ while cap.isOpened():
 
             print(f"Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
 
+            time_boot_ms = int(time.time() * 1000) % 4294967295
+
+            master.mav.named_value_float_send(time_boot_ms, b'Jetson_Vx',v_x)
+            master.mav.named_value_float_send(time_boot_ms, b'Jetson_Vy',v_z)
+
             # Send the MAVLink command
             master.mav.set_position_target_local_ned_send(
                 0, master.target_system, master.target_component,
@@ -218,9 +223,7 @@ while cap.isOpened():
     # UI Overlay
     cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-
-    # Coasting & Memory Decay Logic
-    # If the target is lost, we increment the timer
+    # If the target is lost increment the timer
     if not target_found_this_frame and locked_id is not None:
         timeout_frames += 1
         print(f"Target lost... {timeout_frames}/{MAX_TIMEOUT}")
