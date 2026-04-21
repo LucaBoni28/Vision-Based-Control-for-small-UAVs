@@ -1,56 +1,79 @@
+###############################################################################
+# Author: Luca Boninsegna
+# Date:   21/04/26
+# Descr:  Control a virtual drone in mission planner with the keyboard
+#         W/S : Move Forward/Backward
+#         A/D : Move Left/Right
+#         UP/DOWN : Change Altitude
+#         Hold 'Q' to Quit
+###############################################################################
+
 import time
 import keyboard
 from pymavlink import mavutil
+import os
+import atexit
+import sys
+import termios
 
-# 1. Establish the TCP connection to SITL
-print("Connecting to virtual drone...")
-master = mavutil.mavlink_connection('tcp:127.0.0.1:5762')
+# The Unix Terminal Bypass
+print("Silencing terminal output...")
+os.system("stty -echo") # Disables the visual typing echo in the terminal
+
+def restore_terminal():
+    termios.tcflush(sys.stdin, termios.TCIFLUSH)
+    os.system("stty echo")
+    print("\nTerminal echo restored")
+    
+atexit.register(restore_terminal)
+
+# Establish the UDP Server on the Jetson
+print("Waiting for WSL simulation to push heartbeat...")
+master = mavutil.mavlink_connection('udpin:0.0.0.0:14551')
 master.wait_heartbeat()
-print(f"Target locked! System: {master.target_system}")
+print(f"Target locked! System: {master.target_system}, Component: {master.target_component}")
 
-# 2. Define the Velocity Command Function
+# Define the Velocity Command Function
 def send_velocity(vx, vy, vz):
-    """ Command the drone using velocities in meters per second """
-    # Bitmask 3527 (0b0000111111000111) strictly enables vx, vy, vz
     master.mav.set_position_target_local_ned_send(
         0, master.target_system, master.target_component,
-        mavutil.mavlink.MAV_FRAME_LOCAL_NED,
-        3527,    # Velocity bitmask
-        0, 0, 0, # Positions (Ignored)
+        mavutil.mavlink.MAV_FRAME_BODY_NED,
+        0b0000011111000111, # Explicit binary mask for velocities and yaw rate
+        0, 0, 0,
         vx, vy, vz,
-        0, 0, 0, # Accelerations (Ignored)
-        0, 0     # Yaw rates (Ignored)
+        0, 0, 0,
+        0, 0
     )
 
-print("--- TELEOPERATION ACTIVE ---")
+print("--- COMMANDS LIST---")
 print("W/S : Move Forward/Backward")
 print("A/D : Move Left/Right")
 print("UP/DOWN : Change Altitude")
-print("Hold 'q' to Quit")
+print("Hold 'Q' to Quit")
 
-# 3. The Real-Time Control Loop
+# The Real-Time Polling Loop
 try:
     while True:
         # Default state is hovering (zero velocity)
         vx, vy, vz = 0.0, 0.0, 0.0
 
-        # Read the keyboard state
-        if keyboard.is_pressed('w'): vx = 2.0   # 2 m/s Forward
-        if keyboard.is_pressed('s'): vx = -2.0  # 2 m/s Backward
-        if keyboard.is_pressed('d'): vy = 2.0   # 2 m/s Right
-        if keyboard.is_pressed('a'): vy = -2.0  # 2 m/s Left
+        # Read the keyboard state passively
+        if keyboard.is_pressed('w'): vx = 2.0   
+        if keyboard.is_pressed('s'): vx = -2.0  
+        if keyboard.is_pressed('d'): vy = 2.0   
+        if keyboard.is_pressed('a'): vy = -2.0  
         
-        if keyboard.is_pressed('up'): vz = -1.0   # 1 m/s Up (NED frame is Negative Z)
-        if keyboard.is_pressed('down'): vz = 1.0  # 1 m/s Down
+        if keyboard.is_pressed('up'): vz = -1.0   
+        if keyboard.is_pressed('down'): vz = 1.0  
         
         if keyboard.is_pressed('q'):
-            print("Terminating")
+            print("Terminating teleoperation...")
             break
 
         # Transmit the calculated vectors to the flight controller
         send_velocity(vx, vy, vz)
         
-        # Maintain a 10Hz control loop (standard for MAVLink teleoperation)
+        # Maintain a 10Hz control loop
         time.sleep(0.1)
 
 except KeyboardInterrupt:
