@@ -104,7 +104,7 @@ while cap.isOpened():
         print(f"Target Locked | Error Vector -> X: {error_x}px, Y: {error_y}px")
 
         # Draw the direction to center the target object 
-        cv2.arrowedLine(annotated_frame, (obj_center_x, frame_center_y), (frame_center_x, obj_center_y), (0, 0, 255), 5, tipLength=0.05)
+        cv2.arrowedLine(annotated_frame, (frame_center_x, frame_center_y), (obj_center_x, obj_center_y), (0, 0, 255), 5, tipLength=0.05)
         
     # Push to the window
     cv2.imshow(window_name, annotated_frame)

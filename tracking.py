@@ -11,13 +11,15 @@ import struct
 import time
 import math
 from ultralytics import YOLO
+import numpy as np
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from pymavlink import mavutil
 
 # Connection to Pixhawk
 print("Connecting to Flight Controller...")
 # master = mavutil.mavlink_connection('/dev/ttyACM0',baud=115200)
-master = mavutil.mavlink_connection('udp:127.0.0.1:14551', source_system=1, source_component=1)
+master = mavutil.mavlink_connection('udpin:0.0.0.0:14551', source_system=255, source_component=191) # 'udp:127.0.0.1:14551',
+
 
 # Wait for valid MAVLink heartbeat packet
 print("Bridge open. Listening for ArduPilot heartbeat...")
@@ -28,20 +30,21 @@ print("TARGET ACQUIRED: Heartbeat Received!")
 print(f"System ID: {master.target_system}")
 print(f"Component ID: {master.target_component}")
 
-# Control gain parameter
+# Control parameters
 K_yaw = 1.0     # Gain for the yaw angle
 k_vz = 0.5      # Gain for vertical velocity
-V_max = 1.0     # Maximum forward velocity in m/s
+V_max = 1      # Maximum forward velocity in m/s
+R_stop = 0.8    # Radius of stop forward velocity v_x
 
 # Load YOLOv8 compiled as a TensorRT Engine for maximum GPU efficiency
 model = YOLO('yolov8n.engine', task='detect')
 
 # Initialize the Custom Tracker (The Visual Memory + Physics Engine)
-MAX_TIMEOUT = 100   
+MAX_TIMEOUT = 50   
 tracker = DeepSort(
     max_age=MAX_TIMEOUT,              # Memory your X and Y coordinate pairs duration: Remembers a lost object for max_age frames
-    embedder="mobilenet",     # The micro-network used to extract the visual fingerprint
-    half=True,                # Uses FP16 precision to optimize Orin NX Tensor Cores
+    embedder="mobilenet",     # The micro-network uses to extract the visual fingerprint
+    half=False,                # Uses FP16 precision to optimize Orin NX Tensor Cores
     max_cosine_distance=0.8,  # Higher value allows for lighting/shadow changes
     n_init=1,                 # Lock onto target immediately after 1 frame
     max_iou_distance=0.8,     # Allows object to move fast between frames
@@ -50,7 +53,7 @@ tracker = DeepSort(
 # Setting GStreamer pipeline to pull raw data from the CSI Camera
 gst_pipeline = (
     "nvarguscamerasrc sensor-id=0 ! "
-    "video/x-raw(memory:NVMM), width=1920, height=1080, framerate=30/1, format=NV12 ! "
+    "video/x-raw(memory:NVMM), width=1280, height=960, framerate=30/1, format=NV12 ! "
     "nvvidconv ! "
     "video/x-raw, format=BGRx ! "
     "videoconvert ! "
@@ -100,12 +103,12 @@ while cap.isOpened():
     fps = 1.0 / (current_time - prev_time)
     prev_time = current_time
 
-    # YOLO finds the object (Class 0 = Person) independently of tracking
-    results = model.predict(frame, classes=[0], conf=0.4, verbose=False)
+    # YOLO finds the object independently of tracking
+    # class 0 = person, class 62 = monitor
+    results = model.predict(frame, classes=[0], conf=0.65, verbose=False)
     
-   
+    # Preparation of the data for DeepSORT
     bbs_expected_by_tracker = []
-    
     for box in results[0].boxes:
         # Extract raw floating-point tensors from YOLO
         raw_x1, raw_y1, raw_x2, raw_y2 = box.xyxy[0].cpu().numpy()
@@ -117,11 +120,10 @@ while cap.isOpened():
         x2 = min(img_w, int(raw_x2))
         y2 = min(img_h, int(raw_y2))
         
+        # Filter out garbage artifacts or impossibly small boxes at the screen edges
         w = x2 - x1
         h = y2 - y1
-    
-        # Filter out garbage artifacts or impossibly small boxes at the screen edges
-        if w < 10 or h < 10:
+        if w < 20 or h < 20:
             continue
             
         conf = box.conf[0].item()
@@ -130,14 +132,12 @@ while cap.isOpened():
         # Package into the strict list format required by DeepSORT
         bbs_expected_by_tracker.append(([x1, y1, w, h], conf, cls))
 
-    # This single line handles:
     # 1. Cropping the image to the bounding box
     # 2. Running MobileNet to extract the visual fingerprint (Cosine Distance)
     # 3. Running the Kalman Filter to predict kinematics
     tracks = tracker.update_tracks(bbs_expected_by_tracker, frame=frame)
 
-
-    # Control logic loop
+    # Control logic loop and visualization
     for track in tracks:
         if not track.is_confirmed():
             continue
@@ -184,12 +184,23 @@ while cap.isOpened():
             sign_x = 1 if e_x > 1 else -1
             sign_y = 1 if e_y > 1 else -1
 
-            # Adjust the object in the centerwindow_name
+            # Adjust the object in the frame center
             omega_z = K_yaw * sign_x * (e_x**2)
             v_z = k_vz * sign_y * (e_y**2)
 
+            # # Calculate the omega_z and v_z values to adjust the object in the frame center
+            # # Deadzone to stop micro adjustments when perfectly centered
+            # if abs(e_x) > 0.05:
+            #     omega_z = K_yaw * e_x
+            # else:
+            #     omega_z = 0
+
+            # if abs(e_y) > 0.05:
+            #     v_z = k_vz * e_y
+            # else:
+            #     v_z = 0
+
             # Setting forward velocity
-            R_stop = 0.8
             if e_mag >= R_stop:
                 v_x = 0.0 # Stop drone if target close to the edge
             else:
@@ -204,10 +215,12 @@ while cap.isOpened():
             master.mav.named_value_float_send(time_boot_ms, b'Jetson_Vy',v_z)
 
             # Send the MAVLink command
+            print(f"System: {master.target_system} | Component: {master.target_component}")
+
             master.mav.set_position_target_local_ned_send(
                 0, master.target_system, master.target_component,
                 mavutil.mavlink.MAV_FRAME_BODY_NED,
-                0b0000111111000111,
+                0b0000011111000111,
                 0, 0, 0,
                 v_x, 0.0, v_z,
                 0, 0, 0,
@@ -218,7 +231,7 @@ while cap.isOpened():
             cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
             cv2.putText(frame, f"ID: {track_id}", (int(x1), int(y1) - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-            cv2.arrowedLine(frame, (bb_center_x, bb_center_y), (CENTER_X, CENTER_Y), (0, 0, 255), 5, tipLength=0.05)
+            cv2.arrowedLine(frame, (CENTER_X, CENTER_Y), (bb_center_x, bb_center_y), (0, 0, 255), 5, tipLength=0.05)
 
     # UI Overlay
     cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
@@ -232,7 +245,7 @@ while cap.isOpened():
         master.mav.set_position_target_local_ned_send(
                 0, master.target_system, master.target_component,
                 mavutil.mavlink.MAV_FRAME_BODY_NED,
-                0b0000111111000111,
+                0b0000011111000111,
                 0, 0, 0,
                 0.0, 0.0, 0.0,
                 0, 0, 0,
@@ -244,8 +257,11 @@ while cap.isOpened():
             print("TARGET PURGED FROM MEMORY. SEARCHING FOR NEW TARGET...")
             locked_id = None 
 
+
+    stream_frame = cv2.resize(frame, (640, 480))
+
     # Compress the frame to JPEG to save network bandwidth
-    ret, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    ret, buffer = cv2.imencode('.jpg', stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 60])
     frame_data = buffer.tobytes()
 
     # Pack the size of the frame, then attach the frame data
