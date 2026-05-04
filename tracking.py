@@ -30,10 +30,22 @@ print("TARGET ACQUIRED: Heartbeat Received!")
 print(f"System ID: {master.target_system}")
 print(f"Component ID: {master.target_component}")
 
+# Request the attitude stream
+master.mav.request_data_stream_send(
+    master.target_system,
+    master.target_component,
+    mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
+    10,
+    1
+)
+current_pitch_rad = 0
+
 # Control parameters
-K_yaw = 1.0     # Gain for the yaw angle
-k_vz = 0.5      # Gain for vertical velocity
-V_max = 1      # Maximum forward velocity in m/s
+K_p_yaw = 1     # Proportional gain for yaw rate
+K_d_yaw = 0.05  # Derivative gain for yaw rate
+K_p_vz = 1      # Proportional gain for vertical velocity
+K_d_vz = 0.05   # Derivative gain for vertical velocity
+V_max = 1       # Maximum forward velocity in m/s
 R_stop = 0.8    # Radius of stop forward velocity v_x
 
 # Load YOLOv8 compiled as a TensorRT Engine for maximum GPU efficiency
@@ -80,11 +92,13 @@ client_socket.connect((TCP_IP,TCP_PORT))
 # cv2.resizeWindow(window_name, 1280, 720) 
 # cv2.moveWindow(window_name, 100, 100)
 
-# State Machine Initialization
-locked_id = None            
+# Initialization
+locked_id = None   
+timeout_frames = 0   
+prev_error_y = 0   
+prev_error_x = 0   
 prev_time = time.time()
-timeout_frames = 0
-
+prev_time_fps = 0
 
 while cap.isOpened():
     success, frame = cap.read()
@@ -100,12 +114,12 @@ while cap.isOpened():
     
     # Calculate FPS
     current_time = time.time()
-    fps = 1.0 / (current_time - prev_time)
-    prev_time = current_time
+    fps = 1.0 / (current_time - prev_time_fps)
+    prev_time_fps = current_time
 
     # YOLO finds the object independently of tracking
     # class 0 = person, class 62 = monitor
-    results = model.predict(frame, classes=[0], conf=0.65, verbose=False)
+    results = model.predict(frame, classes=[62], conf=0.65, verbose=False)
     
     # Preparation of the data for DeepSORT
     bbs_expected_by_tracker = []
@@ -157,6 +171,10 @@ while cap.isOpened():
         if track_id == locked_id:
             target_found_this_frame = True
             timeout_frames = 0 # Reset the memory decay timer
+
+            msg = master.recv_match(type='ATTITUDE', blocking=False)
+            if msg:
+                current_pitch_rad = msg.pitch
             
             # Extract the stabilized, filtered bounding box from DeepSORT
             ltrb = track.to_ltrb() 
@@ -180,26 +198,36 @@ while cap.isOpened():
             e_mag = math.sqrt(e_x**2 + e_y**2)
             e_mag = min(1.0, e_mag)
 
-            # Calculate the sign of the adjustment
-            sign_x = 1 if e_x > 1 else -1
-            sign_y = 1 if e_y > 1 else -1
+            # Calculate the delta t
+            current_time = time.time()
+            dt = current_time - prev_time
 
-            # Adjust the object in the frame center
-            omega_z = K_yaw * sign_x * (e_x**2)
-            v_z = k_vz * sign_y * (e_y**2)
+            # Calculate the derivative
+            if dt > 0:
+                derivative_y = (e_y - prev_error_y) / dt
+                derivative_x = (e_x - prev_error_x) / dt
+            else:
+                derivative_y = 0
+                derivative_x = 0
 
-            # # Calculate the omega_z and v_z values to adjust the object in the frame center
-            # # Deadzone to stop micro adjustments when perfectly centered
-            # if abs(e_x) > 0.05:
-            #     omega_z = K_yaw * e_x
-            # else:
-            #     omega_z = 0
+            # # Calculate the sign of the adjustment
+            # sign_x = 1 if e_x >= 0 else -1
+            # sign_y = 1 if e_y >= 0 else -1
+            # # Adjust the object in the frame center
+            # omega_z = K_yaw * sign_x * (e_x**2)
+            # v_z = k_vz * sign_y * (e_y**2)
 
-            # if abs(e_y) > 0.05:
-            #     v_z = k_vz * e_y
-            # else:
-            #     v_z = 0
+            # Implementation PD controller for omega_z and v_z
+            omega_z = K_p_yaw * e_x + K_d_yaw * derivative_x      
+            v_z = K_p_vz * e_y + K_d_vz * derivative_y
+            print(f"Raw v_z: {v_z:.2f} m/s")
 
+            # Deadzone for velocities avoiding micro movements
+            if abs(omega_z) < 0.03:
+                omega_z = 0
+            if abs(v_z) < 0.03:
+                v_z = 0
+            
             # Setting forward velocity
             if e_mag >= R_stop:
                 v_x = 0.0 # Stop drone if target close to the edge
@@ -207,16 +235,9 @@ while cap.isOpened():
                 e_scaled = e_mag / R_stop
                 v_x = V_max * (1 - e_scaled**2)
 
-            print(f"Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
-
-            time_boot_ms = int(time.time() * 1000) % 4294967295
-
-            master.mav.named_value_float_send(time_boot_ms, b'Jetson_Vx',v_x)
-            master.mav.named_value_float_send(time_boot_ms, b'Jetson_Vy',v_z)
+            print(f"Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s  | Pitch: {current_pitch_rad*180/3.14:.2f} deg")
 
             # Send the MAVLink command
-            print(f"System: {master.target_system} | Component: {master.target_component}")
-
             master.mav.set_position_target_local_ned_send(
                 0, master.target_system, master.target_component,
                 mavutil.mavlink.MAV_FRAME_BODY_NED,
@@ -226,6 +247,11 @@ while cap.isOpened():
                 0, 0, 0,
                 0, omega_z
             )
+
+            # Update the memory states
+            prev_error_y = e_y
+            prev_error_x = e_x
+            prev_time = current_time
 
             # Visual GUI Debugging
             cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
@@ -256,7 +282,6 @@ while cap.isOpened():
         if timeout_frames > MAX_TIMEOUT:
             print("TARGET PURGED FROM MEMORY. SEARCHING FOR NEW TARGET...")
             locked_id = None 
-
 
     stream_frame = cv2.resize(frame, (640, 480))
 
