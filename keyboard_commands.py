@@ -15,6 +15,7 @@ import os
 import atexit
 import sys
 import termios
+import math
 
 # The Unix Terminal Bypass
 print("Silencing terminal output...")
