@@ -215,24 +215,26 @@ while cap.isOpened():
             current_time = time.time()
             dt = current_time - prev_time
 
-            # Calculate the derivative
-            if 0 < dt < 0.5:
-                derivative_y = (e_y_compensated - prev_error_y) / dt
-                derivative_x = (e_x - prev_error_x) / dt
+            # Deadzone avoiding micro movements for omega_z
+            if abs(e_x) <= 0.03: omega_z = 0 
             else:
-                derivative_y = 0
-                derivative_x = 0
+                # Calculate the derivative
+                if 0 > dt > 0.5: derivative_x = 0
+                else:
+                    derivative_x = (e_x - prev_error_x) / dt
+                # Implementation PD controller for omega_z
+                omega_z = K_p_yaw * e_x + K_d_yaw * derivative_x
 
-            # Implementation PD controller for omega_z and v_z
-            omega_z = K_p_yaw * e_x + K_d_yaw * derivative_x
-            v_z = K_p_vz * e_y_compensated + K_d_vz * derivative_y
-            
-            # Deadzone for velocities avoiding micro movements
-            if abs(omega_z) < 0.03:
-                omega_z = 0
-            if abs(v_z) < 0.03:
-                v_z = 0
-            
+            # Deadzone avoiding micro movements for v_z
+            if abs(e_y_compensated) <= 0.03: v_z = 0
+            else:
+                # Calculate the derivative
+                if 0 > dt > 0.5: derivative_y = 0
+                else:
+                    derivative_y = (e_y_compensated - prev_error_y) / dt
+                # Implementation PD controller for v_z
+                v_z = K_p_vz * e_y_compensated + K_d_vz * derivative_y
+
             # Setting forward velocity
             w = x2 - x1
             h = y2 - y1
