@@ -182,12 +182,7 @@ while cap.isOpened():
         if track_id == locked_id:
             target_found_this_frame = True
             timeout_frames = 0 # Reset the memory decay timer
-
-            msg = master.recv_match(type='ATTITUDE', blocking=False)
-            if msg:
-                current_pitch_rad = msg.pitch
-                # current_pitch_rad = math.radians(-15)
-            
+           
             # Extract the stabilized, filtered bounding box from DeepSORT
             ltrb = track.to_ltrb() 
             x1, y1, x2, y2 = ltrb
@@ -205,7 +200,12 @@ while cap.isOpened():
             # Error normalization in range [-1,1]
             e_x = error_x / CENTER_X
             e_y = error_y / CENTER_Y
-            e_y_compensated = e_y - math.tan(current_pitch_rad)
+
+            # Pitch compensation utilizing the Raspberry Pi Cam v2 aspect ratio
+            msg = master.recv_match(type='ATTITUDE', blocking=False)
+            if msg: current_pitch_rad = msg.pitch
+                # current_pitch_rad = math.radians(-15)
+            e_y_compensated = e_y - (2.2045*math.tan(current_pitch_rad))
 
             # Calculate the error magnitude
             e_mag = math.sqrt(e_x**2 + e_y_compensated**2)
