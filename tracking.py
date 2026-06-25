@@ -245,97 +245,85 @@ while cap.isOpened():
                 current_time = time.time()
                 dt = current_time - prev_time
 
-                # Calculate the derivative
-                if 0 < dt < 0.5:
-                    derivative_y = (e_y_compensated - prev_error_y) / dt
-                    derivative_x = (e_x - prev_error_x) / dt
-                else:
-                    derivative_y = 0
-                    derivative_x = 0
+            # Calculate the derivative
+            if 0 < dt < 0.5:
+                derivative_y = (e_y_compensated - prev_error_y) / dt
+                derivative_x = (e_x - prev_error_x) / dt
+            else:
+                derivative_y = 0
+                derivative_x = 0
 
-                # Implementation PD controller for omega_z and v_z
-                omega_z = K_p_yaw * e_x + K_d_yaw * derivative_x
-                v_z = K_p_vz * e_y_compensated + K_d_vz * derivative_y
-                
-                # Deadzone for velocities avoiding micro movements
-                if abs(omega_z) < 0.03:
-                    omega_z = 0
-                if abs(v_z) < 0.03:
-                    v_z = 0
-                
-                # Setting forward velocity
-                w = x2 - x1
-                h = y2 - y1
-                current_area = w*h
+            # Implementation PD controller for omega_z and v_z
+            omega_z = K_p_yaw * e_x + K_d_yaw * derivative_x
+            v_z = K_p_vz * e_y_compensated + K_d_vz * derivative_y
             
-                # # Transmit the current area and the calculated distance
-                # time_ms = int(time.time()*1000) % 4294967295
-                # master.mav.named_value_float_send(
-                #     time_ms,
-                #     b'BB_area',
-                #     float(current_area)
-                # )
-                # master.mav.named_value_float_send(
-                #     time_ms,
-                #     b'Dist_Est',
-                #     float(distance_estimate)
-                # )
-                
-                e_area = (TARGET_AREA - current_area) / TARGET_AREA
-                v_x_request = K_p_vx * e_area
-
-                # Distance deadzone: target area
-                if abs(e_area) < 0.05:
-                    v_x_request = 0.0
-
-                # Speed limit for center alignment
-                if e_mag >= R_stop:
-                    v_x_limit = 0.0 # Stop drone if target close to the edge
-                else:
-                    e_scaled = e_mag / R_stop
-                    v_x_limit = K_p_vx * (1 - e_scaled**2)
-
-                #  Choosing the safest value of velocity
-                if v_x_request > 0:
-                    v_x = min(v_x_request, v_x_limit)
-                else:
-                    v_x = max(v_x_request, -v_x_limit)
-
-                print(f"Pitch: {current_pitch_rad*180/3.14:.2f} deg | Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
-
-
-                # Calculate Distance estimation in meters
-                if current_area > 0:
-                    distance_estimate = math.sqrt(OPTICAL_CONSTANT / current_area)
-                else:
-                    distance_estimate = 0.0
-
-                # # Log directly to the Jetson's hard drive
-                # current_time = time.time() - script_start_time
-                # with open('thesis_distance_log.csv', 'a') as f:
-                #     f.write(f"{current_time},{distance_estimate},{current_area},{v_x},{v_z},{omega_z}\n")
+            # Deadzone for velocities avoiding micro movements
+            if abs(omega_z) < 0.03:
+                omega_z = 0
+            if abs(v_z) < 0.03:
+                v_z = 0
             
-                # Send the MAVLink command
-                master.mav.set_position_target_local_ned_send(
-                    0, master.target_system, master.target_component,
-                    mavutil.mavlink.MAV_FRAME_BODY_NED,
-                    0b0000011111000111,
-                    0, 0, 0,
-                    v_x, 0.0, v_z,
-                    0, 0, 0,
-                    0, omega_z
-                )
+            # Setting forward velocity
+            w = x2 - x1
+            h = y2 - y1
+            current_area = w*h
+            # print(f"Area: {current_area}")
 
-                # Update the memory states
-                prev_error_y = e_y_compensated
-                prev_error_x = e_x
-                prev_time = current_time
+            e_area = (TARGET_AREA - current_area) / TARGET_AREA
+            v_x_request = K_p_vx * e_area
 
-                # Visual GUI Debugging
-                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-                cv2.putText(frame, f"ID: {track_id}", (int(x1), int(y1) - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                cv2.arrowedLine(frame, (CENTER_X, CENTER_Y), (bb_center_x, bb_center_y), (0, 0, 255), 5, tipLength=0.05)
+            # Distance deadzone: target area
+            if abs(e_area) < 0.05:
+                v_x_request = 0.0
+
+            # Speed limit for center alignment
+            if e_mag >= R_stop:
+                v_x_limit = 0.0 # Stop drone if target close to the edge
+            else:
+                e_scaled = e_mag / R_stop
+                v_x_limit = K_p_vx * (1 - e_scaled**2)
+
+            #  Choosing the safest value of velocity
+            if v_x_request > 0:
+                v_x = min(v_x_request, v_x_limit)
+            else:
+                v_x = max(v_x_request, -v_x_limit)
+
+            print(f"Pitch: {current_pitch_rad*180/3.14:.2f} deg | Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
+
+
+            # Calculate Distance estimation in meters
+            if current_area > 0:
+                distance_estimate = math.sqrt(OPTICAL_CONSTANT / current_area)
+            else:
+                distance_estimate = 0.0
+
+            # # Log directly to the Jetson's hard drive
+            # current_time = time.time() - script_start_time
+            # with open('thesis_distance_log.csv', 'a') as f:
+            #     f.write(f"{current_time},{distance_estimate},{current_area},{v_x},{v_z},{omega_z}\n")
+        
+            # Send the MAVLink command
+            master.mav.set_position_target_local_ned_send(
+                0, master.target_system, master.target_component,
+                mavutil.mavlink.MAV_FRAME_BODY_NED,
+                0b0000011111000111,
+                0, 0, 0,
+                v_x, 0.0, v_z,
+                0, 0, 0,
+                0, omega_z
+            )
+
+            # Update the memory states
+            prev_error_y = e_y_compensated
+            prev_error_x = e_x
+            prev_time = current_time
+
+            # Visual GUI Debugging
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+            cv2.putText(frame, f"ID: {track_id}", (int(x1), int(y1) - 10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            cv2.arrowedLine(frame, (CENTER_X, CENTER_Y), (bb_center_x, bb_center_y), (0, 0, 255), 5, tipLength=0.05)
 
     # UI Overlay
     cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
