@@ -1,0 +1,38 @@
+###############################################################################
+# Author: Luca Boninsegna
+# Date:   01/07/26
+# Descr:  Configuration file for the drone vision system
+###############################################################################
+
+drone:
+  connection_string: 'udpin:0.0.0.0:14551'
+  source_system: 255
+  source_component: 191
+  baudrate: 115200
+
+network:
+  tcp_ip: "172.29.249.199"
+  tcp_port: 5005
+
+camera:
+  # GStreamer pipeline for Jetson CSI camera
+  pipeline: "nvarguscamerasrc sensor-id=0 ! video/x-raw(memory:NVMM), width=1280, height=960, framerate=30/1, format=NV12 ! nvvidconv ! video/x-raw, format=BGRx ! videoconvert ! video/x-raw, format=BGR ! appsink"
+
+vision:
+  model_path: 'yolo26n.engine'
+  tracker_type: 'bytetrack' # 'deepsort', 'botsort'
+  deepsort_max_age: 50
+  deepsort_max_cosine_distance: 0.8
+
+control:
+  # Proportional gains
+  k_p_yaw: 1.0
+  k_p_vz: 1.0
+  k_p_vx: 1.0
+
+  # Derivative gains
+  k_d_yaw: 0.05
+  k_d_vz: 0.05
+  
+  # limit center alignment
+  r_stop: 0.8
