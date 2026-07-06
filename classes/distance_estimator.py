@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import List, Tuple
 
-from config import CalibrationConfig
+from classes.config import CalibrationConfig
 
 # Defines the DistanceEstimator class, which encapsulates the bounding-box-area to distance calibration logic
 class DistanceEstimator:

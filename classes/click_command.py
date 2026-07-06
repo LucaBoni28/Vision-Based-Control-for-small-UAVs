@@ -7,7 +7,7 @@
 
 import socket
 import struct
-from config import CommandLinkConfig
+from classes.config import CommandLinkConfig
 
 _CLICK_FORMAT = ">ff"
 _CLICK_SIZE = struct.calcsize(_CLICK_FORMAT)

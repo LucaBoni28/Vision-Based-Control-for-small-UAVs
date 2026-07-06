@@ -8,8 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from config import DetectionConfig, DeepSortConfig
-from detector import YoloDetector
+from classes.config import DetectionConfig, DeepSortConfig
+from classes.detector import YoloDetector
 
 
 @dataclass

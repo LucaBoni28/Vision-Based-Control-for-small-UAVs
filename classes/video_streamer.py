@@ -11,7 +11,7 @@ import struct
 import cv2
 import numpy as np
 
-from config import VideoLinkConfig
+from classes.config import VideoLinkConfig
 
 # Constants for the TCP video streaming protocol
 _PAYLOAD_SIZE = struct.calcsize(">L")  # 4-byte unsigned long
