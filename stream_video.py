@@ -14,7 +14,7 @@ import cv2
 # Import custom classes
 from classes.config import AppConfig
 from classes.video_streamer import StreamReceiver
-from classes.command_channel import CommandSender
+from classes.click_command import CommandSender
 
 
 def main() -> None:
