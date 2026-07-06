@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import List, Tuple
 
 from classes.config import DetectionConfig, DeepSortConfig
-from detector import YoloDetector
+from classes.detector import YoloDetector
 
 
 @dataclass

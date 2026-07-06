@@ -7,7 +7,7 @@
 
 from abc import ABC, abstractmethod     # Import abstract base class and abstract method decorators
 import cv2                              # Import OpenCV for video capture and image processing
-from config import CameraConfig         # Import CameraConfig for configuration YAML file
+from classes.config import CameraConfig         # Import CameraConfig for configuration YAML file
 
 # Abstract base class for any camera source that can provide a stream of BGR frames to the MissionController
 class CameraSource(ABC):

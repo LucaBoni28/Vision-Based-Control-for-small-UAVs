@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from config import DetectionConfig
+from classes.config import DetectionConfig
 
 
 @dataclass

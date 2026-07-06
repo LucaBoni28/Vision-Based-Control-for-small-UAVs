@@ -24,7 +24,7 @@ from classes.video_streamer import VideoStreamer
 from classes.tracker import create_tracker
 from classes.distance_estimator import DistanceEstimator
 from classes.target_selector import create_target_selector
-from classes.command_channel import CommandReceiver
+from classes.click_command import CommandReceiver
 from classes.mission_controller import MissionController
 
 
