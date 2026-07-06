@@ -10,7 +10,7 @@ from typing import Optional
 
 from pymavlink import mavutil
 
-from config import MavlinkConfig
+from classes.config import MavlinkConfig
 
 
 @dataclass

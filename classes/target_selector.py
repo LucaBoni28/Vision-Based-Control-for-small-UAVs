@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 
 from tracker import Track
-from click_command import CommandReceiver
+from classes.click_command import CommandReceiver
 
 # Abstract base class for any target selector that can choose a track to lock onto from a list of detected tracks
 class TargetSelector(ABC):
