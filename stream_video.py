@@ -1,64 +1,70 @@
 ###############################################################################
 # Author: Luca Boninsegna
-# Date:   14/04/26
-# Descr:  Receives the processed video stream from the Jetson Orin NX and displays it on the Ground Station.
+# Date:   04/07/2026
+# Descr:  Receives the processed video stream from the Jetson Orin NX and
+#         displays it on the Ground Station.
+#
+#         Clicking on the stream sends a normalized (x, y) point back to the
+#         Jetson over the same TCP link, for ManualClickSelector to lock
+#         onto whichever track the click landed inside.
 ###############################################################################
 
 import cv2
-import socket
-import numpy as np
-import struct
 
-HOST = '0.0.0.0'
-PORT = 5005
+# Import custom classes
+from classes.config import AppConfig
+from classes.video_streamer import StreamReceiver
+from classes.command_channel import CommandSender
 
-# Setup TCP Server
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.bind((HOST, PORT))
-s.listen(1)
-print("Waiting for Jetson to connect...")
 
-conn, addr = s.accept()
-print(f"Connected by {addr}")
+def main() -> None:
+    # Load configuration YAML file
+    config = AppConfig.load("classes/config.yaml")
 
-data = b""
-payload_size = struct.calcsize(">L") # Unsigned long integer (4 bytes)
+    # Start the video stream receiver
+    receiver = StreamReceiver(config.video_link)
+    receiver.start()
 
-while True:
-    # Retrieve the message size
-    while len(data) < payload_size:
-        packet = conn.recv(4096)
-        if not packet: break
-        data += packet
-    if not data: break
-    
-    packed_msg_size = data[:payload_size]
-    data = data[payload_size:]
-    msg_size = struct.unpack(">L", packed_msg_size)[0]
-    
-    # Retrieve the actual frame data
-    while len(data) < msg_size:
-        data += conn.recv(4096)
-        
-    frame_data = data[:msg_size]
-    data = data[msg_size:]
-    
-    # Decode and Display
-    frame = cv2.imdecode(np.frombuffer(frame_data, dtype=np.uint8), cv2.IMREAD_COLOR)
-    if frame is not None:
-        window_name = "Jetson Tracking Stream"
-        
-        # Unlock the window size constraints (run this once)
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        
-        # Resize the window to a manageable resolution
-        cv2.resizeWindow(window_name, 1280, 720)
-        
-        # Move the window to the top-left corner of your screen
-        # cv2.moveWindow(window_name, 50, 50)
-        
-        # Display the frame inside the newly sized window
+    # Create a resizable window for displaying the video stream
+    window_name = "Jetson Tracking Stream"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(
+        window_name,
+        config.display.ground_station_window_width,
+        config.display.ground_station_window_height,
+    )
+
+    # Set up mouse callback for manual target selection
+    if config.target_selection.mode == "manual":
+        # Set up a command sender to send click coordinates back to the Jetson
+        command_sender = CommandSender(config.command_link)
+        # Get the window dimensions for normalization
+        window_w = config.display.ground_station_window_width
+        window_h = config.display.ground_station_window_height
+
+        # Define the mouse callback function
+        def on_mouse(event, x, y, flags, userdata):
+            # Only handle left mouse button clicks
+            if event == cv2.EVENT_LBUTTONDOWN:
+                norm_x = x / window_w
+                norm_y = y / window_h
+                command_sender.send_click(norm_x, norm_y)
+                print(f"Sent click at ({norm_x:.2f}, {norm_y:.2f}) to Jetson")
+        # Set the mouse callback for the window
+        cv2.setMouseCallback(window_name, on_mouse)
+        print("Manual target selection: click the video window to select a target.")
+
+    # Start the main loop to read and display frames
+    while True:
+        frame = receiver.read_frame()
+        if frame is None:
+            break
+
         cv2.imshow(window_name, frame)
-        
-    if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty(window_name, cv2.WND_PROP_AUTOSIZE) == -1:
-        break
+
+        if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty(window_name, cv2.WND_PROP_AUTOSIZE) == -1:
+            break
+
+
+if __name__ == "__main__":
+    main()
