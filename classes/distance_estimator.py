@@ -54,7 +54,7 @@ class DistanceEstimator:
             "num_samples": len(samples),
             "samples": [{"distance_m": d, "area_px": a} for d, a in samples],
             "rms_error_m": rms_error_m,
-            "calibrated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            #"calibrated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
@@ -177,12 +177,12 @@ class DistanceEstimator:
                     except Exception as e:
                         print(f"Warning: Failed to stream frame: {e}")
 
-                # Also show locally if display available (for headless Jetson, this won't work)
-                try:
-                    cv2.imshow("Calibration", frame)
-                    cv2.waitKey(1)
-                except:
-                    pass  # No display available
+                # # Also show locally if display available (for headless Jetson, this won't work)
+                # try:
+                #     cv2.imshow("Calibration", frame)
+                #     cv2.waitKey(1)
+                # except:
+                #     pass  # No display available
 
                 frames_captured += 1
                 time.sleep(0.033)  # ~30 FPS
@@ -235,8 +235,7 @@ class DistanceEstimator:
 
             if "calibration" in config_data:
                 config_data["calibration"]["fallback_optical_constant"] = optical_constant
-                config_data["calibration"]["calibrated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
-
+                
                 with open(config_path, "w") as f:
                     yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
 

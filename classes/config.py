@@ -109,8 +109,6 @@ class DisplayConfig:
 @dataclass
 class TargetSelectionConfig:
     mode: str
-    max_click_distance_px: int
-
 
 @dataclass
 class CommandLinkConfig:

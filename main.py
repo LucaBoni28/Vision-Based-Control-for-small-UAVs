@@ -52,9 +52,6 @@ def main() -> None:
     print(f"Tracker backend: {config.tracker.backend}")
     detector = YoloDetector(model, config.detection)
 
-    # Initialize the distance estimator
-    distance_estimator = DistanceEstimator(config.calibration, camera, detector, streamer)
-
     # Initialize the command receiver if manual target selection is enabled
     command_receiver = None
     if config.target_selection.mode == "manual":
@@ -69,6 +66,9 @@ def main() -> None:
     # Initialize the video streamer
     streamer = VideoStreamer(config.video_link)
     streamer.connect()
+
+    # Initialize the distance estimator
+    distance_estimator = DistanceEstimator(config.calibration, camera, detector, streamer)
 
     # Create the mission controller and run the mission
     mission = MissionController(config, camera, flight, streamer, tracker, target_selector, distance_estimator)

@@ -35,12 +35,10 @@ class ManualClickSelector(TargetSelector):
         command_receiver: CommandReceiver,
         frame_width: int,
         frame_height: int,
-        max_click_distance_px: float,
     ):
         self._command_receiver = command_receiver
         self._frame_width = frame_width
         self._frame_height = frame_height
-        self._max_click_distance_px = max_click_distance_px
 
     # Selects the track ID of the detected object whose bounding box contains the click position.
     # If multiple boxes contain the click, the one with the smallest area is chosen.
@@ -50,6 +48,7 @@ class ManualClickSelector(TargetSelector):
             return None
 
         click = self._command_receiver.poll_click()
+        
         if click is None:
             return None
 
@@ -61,6 +60,7 @@ class ManualClickSelector(TargetSelector):
         containing_tracks = []
         for track in tracks:
             x1, y1, x2, y2 = track.bbox
+            print(f"x1: {x1} | x2: {x2} | y1: {y1} | y2: {y2} ")
             if x1 <= click_x <= x2 and y1 <= click_y <= y2:
                 area = (x2 - x1) * (y2 - y1)
                 containing_tracks.append((track.id, area))
@@ -101,11 +101,11 @@ def create_target_selector(config, command_receiver: Optional[CommandReceiver] =
     elif mode == "manual":
         if command_receiver is None:
             raise ValueError("target_selection.mode is 'manual' but no CommandReceiver was provided")
+        print("SELECTION MODE")
         return ManualClickSelector(
             command_receiver,
             frame_width=config.camera.width,
-            frame_height=config.camera.height,
-            max_click_distance_px=config.target_selection.max_click_distance_px,
+            frame_height=config.camera.height
         )
     else:
         raise ValueError(f"Unknown target_selection.mode '{mode}'. Expected: auto, manual, nearest")
