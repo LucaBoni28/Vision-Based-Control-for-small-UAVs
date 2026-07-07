@@ -69,6 +69,8 @@ class StreamReceiver:
 
         frame_data = self._buffer[:msg_size]
         self._buffer = self._buffer[msg_size:]
+        
+        # cv2.putText(frame_data, "Press 'c' to Calibrate", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
         return cv2.imdecode(np.frombuffer(frame_data, dtype=np.uint8), cv2.IMREAD_COLOR)
 

@@ -15,6 +15,8 @@ import cv2
 from classes.config import AppConfig
 from classes.video_streamer import StreamReceiver
 from classes.click_command import CommandSender
+from classes.distance_estimator import DistanceEstimator
+from classes.camera import CSICameraSource
 
 
 def main() -> None:
@@ -60,10 +62,14 @@ def main() -> None:
         if frame is None:
             break
 
+        cv2.putText(frame, "Press 'c' to calibrate", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
         cv2.imshow(window_name, frame)
 
         if cv2.waitKey(1) & 0xFF == ord('q') or cv2.getWindowProperty(window_name, cv2.WND_PROP_AUTOSIZE) == -1:
             break
+        elif cv2.waitKey(1) & 0xFF == ord('c'):
+            print("Calibration requested. Press 'c' to stop calibration...")
+            distance_estimator = DistanceEstimator(config, CSICameraSource(config.camera))
 
 
 if __name__ == "__main__":

@@ -23,9 +23,11 @@ from classes.flight_controller import FlightController
 from classes.video_streamer import VideoStreamer
 from classes.tracker import create_tracker
 from classes.distance_estimator import DistanceEstimator
+from classes.detector import YoloDetector
 from classes.target_selector import create_target_selector
 from classes.click_command import CommandReceiver
 from classes.mission_controller import MissionController
+
 
 
 def main() -> None:
@@ -48,9 +50,10 @@ def main() -> None:
     model = YOLO(config.model.path, task=config.model.task)
     tracker = create_tracker(config, model)
     print(f"Tracker backend: {config.tracker.backend}")
+    detector = YoloDetector(model, config.detection)
 
     # Initialize the distance estimator
-    distance_estimator = DistanceEstimator(config.calibration)
+    distance_estimator = DistanceEstimator(config.calibration, camera, detector)
 
     # Initialize the command receiver if manual target selection is enabled
     command_receiver = None
