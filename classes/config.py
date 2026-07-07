@@ -94,6 +94,7 @@ class CalibrationConfig:
     file: str
     desired_stopping_distance_m: float
     fallback_optical_constant: float
+    frames_per_sample: int = 30  # Number of frames to capture and average per distance sample
 
 
 @dataclass

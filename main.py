@@ -53,7 +53,7 @@ def main() -> None:
     detector = YoloDetector(model, config.detection)
 
     # Initialize the distance estimator
-    distance_estimator = DistanceEstimator(config.calibration, camera, detector)
+    distance_estimator = DistanceEstimator(config.calibration, camera, detector, streamer)
 
     # Initialize the command receiver if manual target selection is enabled
     command_receiver = None

@@ -25,8 +25,9 @@ class FirstDetectedSelector(TargetSelector):
         return tracks[0].id if tracks else None
 
 # Concrete implementation of TargetSelector that waits for an operator click relayed from the ground station via CommandReceiver,
-# then locks onto whichever track's bounding-box center is closest to that click, as long as it's within max_click_distance_px.
-# A click that lands nowhere near any detected object is ignored rather than locking the nearest thing regardless of distance.
+# then locks onto the track whose bounding box contains the click position (x1 < click_x < x2 and y1 < click_y < y2).
+# If multiple boxes contain the click, the one with the smallest area is chosen (most precise).
+# A click outside all bounding boxes is ignored.
 class ManualClickSelector(TargetSelector):
     # Initializes the ManualClickSelector with the given CommandReceiver, frame dimensions, and maximum click distance in pixels
     def __init__(
@@ -41,7 +42,9 @@ class ManualClickSelector(TargetSelector):
         self._frame_height = frame_height
         self._max_click_distance_px = max_click_distance_px
 
-    # Selects the track ID of the detected object whose bounding-box center is closest to the operator's click, if within max_click_distance_px; otherwise returns None
+    # Selects the track ID of the detected object whose bounding box contains the click position.
+    # If multiple boxes contain the click, the one with the smallest area is chosen.
+    # Returns None if no click or no box contains the click.
     def select(self, tracks: List[Track]) -> Optional[int]:
         if not tracks:
             return None
@@ -54,24 +57,22 @@ class ManualClickSelector(TargetSelector):
         click_x = norm_x * self._frame_width
         click_y = norm_y * self._frame_height
 
-        best_id = None
-        best_dist = None
+        # Find all tracks whose bounding box contains the click
+        containing_tracks = []
         for track in tracks:
             x1, y1, x2, y2 = track.bbox
-            center_x = (x1 + x2) / 2
-            center_y = (y1 + y2) / 2
-            dist = ((center_x - click_x) ** 2 + (center_y - click_y) ** 2) ** 0.5
-            if best_dist is None or dist < best_dist:
-                best_dist = dist
-                best_id = track.id
+            if x1 <= click_x <= x2 and y1 <= click_y <= y2:
+                area = (x2 - x1) * (y2 - y1)
+                containing_tracks.append((track.id, area))
 
-        if best_dist is not None and best_dist <= self._max_click_distance_px:
-            print(f"Manual selection: locking onto track {best_id} ({best_dist:.0f}px from click)")
-            return best_id
+        if not containing_tracks:
+            print(f"Click ignored: no bounding box contains the click at ({click_x:.0f}, {click_y:.0f})")
+            return None
 
-        print(f"Click ignored: nearest object was {best_dist:.0f}px away "
-              f"(max {self._max_click_distance_px}px)")
-        return None
+        # Choose the track with the smallest area (most precise detection)
+        best_id, best_area = min(containing_tracks, key=lambda t: t[1])
+        print(f"Manual selection: locking onto track {best_id} (click inside bbox, area={best_area:.0f}px)")
+        return best_id
 
 # Concrete implementation of TargetSelector that locks onto the detected object with the largest bounding-box area, which is assumed to be the closest to the drone
 class NearestObjectSelector(TargetSelector):

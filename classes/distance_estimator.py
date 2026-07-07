@@ -12,19 +12,20 @@ from ultralytics import YOLO
 from pathlib import Path
 from typing import List, Tuple
 
-from classes.config import CalibrationConfig
+from classes.config import CalibrationConfig, AppConfig
 from classes.camera import CameraSource
 from classes.detector import Detector, YoloDetector
-from classes.config import AppConfig
+from classes.video_streamer import VideoStreamer
 
 
 # Defines the DistanceEstimator class, which encapsulates the bounding-box-area to distance calibration logic
 class DistanceEstimator:
     # Initializes the DistanceEstimator with the given calibration configuration
-    def __init__(self, calibration: CalibrationConfig, camera: CameraSource, detector: Detector):
+    def __init__(self, calibration: CalibrationConfig, camera: CameraSource, detector: Detector, video_streamer: VideoStreamer = None):
         self._config = calibration
         self._camera = camera
         self._detector = detector
+        self._video_streamer = video_streamer
         self._optical_constant = None
         self.load()
 
@@ -98,60 +99,114 @@ class DistanceEstimator:
         return k, rms_error_m
 
     def calibrate(self) -> None:
-    
-        samples: List[Tuple[float, float]] = []  # (distance_m, area_px)
+        """
+        Automated calibration mode:
+        1. User places target at a known distance and confirms via keyboard
+        2. System captures N frames (config.frames_per_sample), runs YOLO on each
+        3. Averages the detected bounding box areas
+        4. Saves (distance, avg_area) sample
+        5. Repeat for multiple distances (minimum 2)
+        6. Fit optical constant and save to calibration.json + update config.yaml
+        """
+        samples: List[Tuple[float, float]] = []  # (distance_m, avg_area_px)
+        frames_per_sample = getattr(self._config, 'frames_per_sample', 30)
 
         print("=== Calibration Mode ===")
-        print("Place the target at a known distance, press 'c' to capture, 'q' to finish and fit.\n")
+        print("Video stream will be sent to Ground Station for monitoring.")
+        print(f"Place the target at a known distance, then press ENTER to capture {frames_per_sample} frames.")
+        print("Press 'q' at the distance prompt to finish and fit.\n")
 
-        window_name = "Calibration"
+        # Check if we have a video streamer
+        if self._video_streamer is None:
+            print("WARNING: No VideoStreamer provided. Calibration frames will NOT be streamed to Ground Station.")
+            print("         Video will only display locally (if display available).")
 
         while True:
-            
-            success, frame = self._camera.read()
-            if not success:
-                break
-
-            detections = self._detector.detect(frame)
-            largest = None
-            if detections:
-                largest = max(detections, key=lambda d: (d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1]))
-                x1, y1, x2, y2 = largest.bbox
-                area = (x2 - x1) * (y2 - y1)
-                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-                cv2.putText(frame, f"area={area:.0f}px", (int(x1), int(y1) - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            else:
-                area = None
-
-            cv2.putText(frame, f"Samples: {len(samples)}  |  'c' capture, 'q' finish",
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-            cv2.imshow(window_name, frame)
-
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('c'):
-                if area is None:
-                    print("No target detected in frame — can't capture. Adjust position and try again.")
+            # Get distance from user
+            try:
+                dist_input = input("Enter the measured distance in meters (or 'q' to finish): ").strip()
+                if dist_input.lower() == 'q':
+                    break
+                distance_m = float(dist_input)
+                if distance_m <= 0:
+                    print("Distance must be > 0, try again.")
                     continue
+            except ValueError:
+                print("Invalid number, try again.")
+                continue
+
+            print(f"Capturing {frames_per_sample} frames at distance {distance_m:.2f}m...")
+
+            # Capture frames and collect areas
+            areas = []
+            frames_captured = 0
+
+            while frames_captured < frames_per_sample:
+                success, frame = self._camera.read()
+                if not success:
+                    print("Failed to read frame from camera")
+                    break
+
+                detections = self._detector.detect(frame)
+
+                if detections:
+                    # Use the largest detection
+                    largest = max(detections, key=lambda d: (d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1]))
+                    x1, y1, x2, y2 = largest.bbox
+                    area = (x2 - x1) * (y2 - y1)
+                    areas.append(area)
+
+                    # Draw visualization
+                    cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                    cv2.putText(frame, f"area={area:.0f}px", (int(x1), int(y1) - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                else:
+                    # No detection - still count the frame but don't add area
+                    pass
+
+                # Add overlay info
+                cv2.putText(frame, f"Calibration: {distance_m:.2f}m  Frame {frames_captured+1}/{frames_per_sample}",
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                cv2.putText(frame, f"Samples collected: {len(samples)}",
+                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                # Stream to ground station if available
+                if self._video_streamer is not None:
+                    try:
+                        self._video_streamer.send_frame(frame, 80)
+                    except Exception as e:
+                        print(f"Warning: Failed to stream frame: {e}")
+
+                # Also show locally if display available (for headless Jetson, this won't work)
                 try:
-                    dist = float(input("Enter the measured distance in meters for this sample: "))
-                except ValueError:
-                    print("Invalid number, skipping this sample.")
-                    continue
-                if dist <= 0:
-                    print("Distance must be > 0, skipping this sample.")
-                    continue
-                samples.append((dist, area))
-                print(f"Captured sample #{len(samples)}: distance={dist}m, area={area:.0f}px\n")
-            elif key == ord('q'):
-                break           
+                    cv2.imshow("Calibration", frame)
+                    cv2.waitKey(1)
+                except:
+                    pass  # No display available
 
-        cv2.destroyWindow(window_name)
+                frames_captured += 1
+                time.sleep(0.033)  # ~30 FPS
+
+            if len(areas) < frames_per_sample * 0.5:  # Require at least 50% detection rate
+                print(f"WARNING: Only {len(areas)}/{frames_per_sample} frames had detections. "
+                      "Consider better lighting or target positioning.")
+
+            if not areas:
+                print("No detections captured at this distance. Skipping sample.")
+                continue
+
+            avg_area = sum(areas) / len(areas)
+            samples.append((distance_m, avg_area))
+            print(f"Sample #{len(samples)} captured: distance={distance_m:.2f}m, avg_area={avg_area:.0f}px "
+                  f"(from {len(areas)} detections)\n")
+
+        cv2.destroyAllWindows()
 
         if len(samples) < 2:
             print(f"\nOnly {len(samples)} sample(s) captured — need at least 2 to fit. Calibration NOT saved.")
             return
 
+        # Fit optical constant
         optical_constant, rms_error_m = DistanceEstimator.fit(samples)
         print(f"\nFitted optical_constant = {optical_constant:.1f}")
         print(f"RMS distance error across the {len(samples)} calibration samples: {rms_error_m:.3f} m")
@@ -160,5 +215,31 @@ class DistanceEstimator:
             print("WARNING: RMS error is fairly high (>0.1 m). Consider re-capturing with more/cleaner samples "
                 "before trusting this calibration for flight.")
 
+        # Save to calibration.json
         self.save(optical_constant, samples, rms_error_m)
-        print(f"Saved to {self._config.file}")
+        print(f"Saved calibration to {self._config.file}")
+
+        # Also update config.yaml with the new optical constant
+        self._update_config_yaml(optical_constant)
+
+    def _update_config_yaml(self, optical_constant: float) -> None:
+        """Update the fallback_optical_constant in config.yaml with the calibrated value."""
+        try:
+            import yaml
+            config_path = Path("classes/config.yaml")
+            if not config_path.exists():
+                config_path = Path("config.yaml")
+
+            with open(config_path, "r") as f:
+                config_data = yaml.safe_load(f)
+
+            if "calibration" in config_data:
+                config_data["calibration"]["fallback_optical_constant"] = optical_constant
+                config_data["calibration"]["calibrated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+                with open(config_path, "w") as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+                print(f"Updated config.yaml with optical_constant = {optical_constant:.1f}")
+        except Exception as e:
+            print(f"Warning: Could not update config.yaml: {e}")
