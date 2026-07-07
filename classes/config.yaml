@@ -43,7 +43,7 @@ control:
 calibration:
   file: calibration.json
   desired_stopping_distance_m: 0.6
-  fallback_optical_constant: 160590.36263498367
+  fallback_optical_constant: 7192.943181818182
   frames_per_sample: 30
 display:
   stream_width: 640

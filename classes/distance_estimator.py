@@ -7,6 +7,7 @@
 import json
 import math
 import time
+import threading
 import cv2
 from ultralytics import YOLO
 from pathlib import Path
@@ -46,15 +47,15 @@ class DistanceEstimator:
             self.calibrate()
 
 
-    # Saves the calibration to the specified file, including the optical constant, number of samples, RMS error, and timestamp
-    def save(self, optical_constant: float, samples: List[Tuple[float, float]], rms_error_m: float) -> None:
+    # Saves the calibration to the specified file, including the optical constant, distance, areas, and RMS error
+    def save(self, optical_constant: float, distance_m: float, areas: List[float], rms_error_m: float) -> None:
         path = Path(self._config.file)
         data = {
             "optical_constant": optical_constant,
-            "num_samples": len(samples),
-            "samples": [{"distance_m": d, "area_px": a} for d, a in samples],
+            "distance_m": distance_m,
+            "num_samples": len(areas),
+            "areas_px": areas,
             "rms_error_m": rms_error_m,
-            #"calibrated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
@@ -98,77 +99,90 @@ class DistanceEstimator:
 
         return k, rms_error_m
 
+    # Computes the optical constant from per-frame samples collected at a single known distance
+    @staticmethod
+    def fit_single_distance(distance_m: float, areas: List[float]) -> Tuple[float, float]:
+        if not areas:
+            raise ValueError("No area samples to fit.")
+
+        # K = d^2 * mean(area)
+        mean_area = sum(areas) / len(areas)
+        k = (distance_m ** 2) * mean_area
+
+        # RMS error: for each sample, compute the predicted distance and compare to the known distance
+        squared_errors = []
+        for a in areas:
+            predicted_d = math.sqrt(k / a) if a > 0 else 0.0
+            squared_errors.append((predicted_d - distance_m) ** 2)
+        rms_error_m = math.sqrt(sum(squared_errors) / len(squared_errors))
+
+        return k, rms_error_m
+
     def calibrate(self) -> None:
         """
-        Automated calibration mode:
-        1. User places target at a known distance and confirms via keyboard
-        2. System captures N frames (config.frames_per_sample), runs YOLO on each
-        3. Averages the detected bounding box areas
-        4. Saves (distance, avg_area) sample
-        5. Repeat for multiple distances (minimum 2)
-        6. Fit optical constant and save to calibration.json + update config.yaml
+        Single-distance calibration mode with live preview:
+        1. Video stream starts immediately for visual feedback
+        2. User enters the known distance once
+        3. User presses ENTER to start recording, ENTER again to stop
+        4. Every frame with a detection produces an individual (distance, area) sample
+        5. Optical constant K is fitted from all per-frame samples
+        6. Results are saved to calibration.json and config.yaml
         """
-        samples: List[Tuple[float, float]] = []  # (distance_m, avg_area_px)
-        frames_per_sample = getattr(self._config, 'frames_per_sample', 30)
+        # Shared state between the preview thread and the main thread
+        stop_preview = threading.Event()
+        recording = threading.Event()
+        areas: List[float] = []             # all per-frame area samples
+        lock = threading.Lock()             # protects 'areas' and overlay text
+        status_text = ["Waiting..."]        # mutable container for thread-safe overlay
+        sample_count = [0]                  # live counter shown on overlay
 
         print("=== Calibration Mode ===")
-        print("Video stream will be sent to Ground Station for monitoring.")
-        print(f"Place the target at a known distance, then press ENTER to capture {frames_per_sample} frames.")
-        print("Press 'q' at the distance prompt to finish and fit.\n")
+        print("Live preview is starting... Stream is sent to the Ground Station.")
 
-        # Check if we have a video streamer
         if self._video_streamer is None:
             print("WARNING: No VideoStreamer provided. Calibration frames will NOT be streamed to Ground Station.")
-            print("         Video will only display locally (if display available).")
 
-        while True:
-            # Get distance from user
-            try:
-                dist_input = input("Enter the measured distance in meters (or 'q' to finish): ").strip()
-                if dist_input.lower() == 'q':
-                    break
-                distance_m = float(dist_input)
-                if distance_m <= 0:
-                    print("Distance must be > 0, try again.")
-                    continue
-            except ValueError:
-                print("Invalid number, try again.")
-                continue
-
-            print(f"Capturing {frames_per_sample} frames at distance {distance_m:.2f}m...")
-
-            # Capture frames and collect areas
-            areas = []
-            frames_captured = 0
-
-            while frames_captured < frames_per_sample:
+        # ----- Background thread: capture → detect → draw → stream -----
+        def preview_loop():
+            while not stop_preview.is_set():
                 success, frame = self._camera.read()
                 if not success:
-                    print("Failed to read frame from camera")
-                    break
+                    time.sleep(0.01)
+                    continue
 
                 detections = self._detector.detect(frame)
 
                 if detections:
-                    # Use the largest detection
+                    # Use the largest detection (by bounding box area)
                     largest = max(detections, key=lambda d: (d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1]))
                     x1, y1, x2, y2 = largest.bbox
                     area = (x2 - x1) * (y2 - y1)
-                    areas.append(area)
 
-                    # Draw visualization
+                    # If recording, accumulate the sample
+                    if recording.is_set():
+                        with lock:
+                            areas.append(area)
+                            sample_count[0] = len(areas)
+
+                    # Draw bounding box and area value
                     cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
                     cv2.putText(frame, f"area={area:.0f}px", (int(x1), int(y1) - 10),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-                else:
-                    # No detection - still count the frame but don't add area
-                    pass
 
-                # Add overlay info
-                cv2.putText(frame, f"Calibration: {distance_m:.2f}m  Frame {frames_captured+1}/{frames_per_sample}",
-                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                cv2.putText(frame, f"Samples collected: {len(samples)}",
-                            (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                # Draw status overlay
+                with lock:
+                    overlay = status_text[0]
+                    n_samples = sample_count[0]
+                cv2.putText(frame, overlay, (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                cv2.putText(frame, f"Samples: {n_samples}", (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                # Show recording indicator
+                if recording.is_set():
+                    cv2.circle(frame, (frame.shape[1] - 30, 30), 12, (0, 0, 255), -1)
+                    cv2.putText(frame, "REC", (frame.shape[1] - 80, 38),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
                 # Stream to ground station if available
                 if self._video_streamer is not None:
@@ -177,46 +191,66 @@ class DistanceEstimator:
                     except Exception as e:
                         print(f"Warning: Failed to stream frame: {e}")
 
-                # # Also show locally if display available (for headless Jetson, this won't work)
-                # try:
-                #     cv2.imshow("Calibration", frame)
-                #     cv2.waitKey(1)
-                # except:
-                #     pass  # No display available
-
-                frames_captured += 1
                 time.sleep(0.033)  # ~30 FPS
 
-            if len(areas) < frames_per_sample * 0.5:  # Require at least 50% detection rate
-                print(f"WARNING: Only {len(areas)}/{frames_per_sample} frames had detections. "
-                      "Consider better lighting or target positioning.")
+        # Start the preview thread immediately (video starts before any input)
+        thread = threading.Thread(target=preview_loop, daemon=True)
+        thread.start()
 
-            if not areas:
-                print("No detections captured at this distance. Skipping sample.")
-                continue
+        # ----- Main thread: interact with the user via terminal -----
+        try:
+            # Step 1: get the known distance
+            while True:
+                try:
+                    dist_input = input("\nEnter the known distance in meters: ").strip()
+                    distance_m = float(dist_input)
+                    if distance_m <= 0:
+                        print("Distance must be > 0, try again.")
+                        continue
+                    break
+                except ValueError:
+                    print("Invalid number, try again.")
 
-            avg_area = sum(areas) / len(areas)
-            samples.append((distance_m, avg_area))
-            print(f"Sample #{len(samples)} captured: distance={distance_m:.2f}m, avg_area={avg_area:.0f}px "
-                  f"(from {len(areas)} detections)\n")
+            with lock:
+                status_text[0] = f"Distance: {distance_m:.2f}m — press ENTER to START recording"
 
-        cv2.destroyAllWindows()
+            # Step 2: wait for ENTER to start recording
+            input(f"\nPlace the target at {distance_m:.2f}m, then press ENTER to start recording...")
+            with lock:
+                status_text[0] = f"RECORDING at {distance_m:.2f}m — press ENTER to STOP"
+            recording.set()
+            print("Recording... keep the target steady. Press ENTER to stop.")
 
-        if len(samples) < 2:
-            print(f"\nOnly {len(samples)} sample(s) captured — need at least 2 to fit. Calibration NOT saved.")
+            # Step 3: wait for ENTER to stop recording
+            input()
+            recording.clear()
+
+        finally:
+            # Always stop the preview thread
+            stop_preview.set()
+            thread.join(timeout=3.0)
+
+        # ----- Process results -----
+        with lock:
+            collected_areas = list(areas)
+
+        if not collected_areas:
+            print("\nNo detections were captured during recording. Calibration NOT saved.")
             return
 
-        # Fit optical constant
-        optical_constant, rms_error_m = DistanceEstimator.fit(samples)
-        print(f"\nFitted optical_constant = {optical_constant:.1f}")
-        print(f"RMS distance error across the {len(samples)} calibration samples: {rms_error_m:.3f} m")
+        print(f"\nRecording complete: {len(collected_areas)} per-frame samples collected.")
+
+        # Fit the optical constant using all per-frame samples
+        optical_constant, rms_error_m = DistanceEstimator.fit_single_distance(distance_m, collected_areas)
+        print(f"Fitted optical_constant = {optical_constant:.1f}")
+        print(f"RMS distance error across {len(collected_areas)} samples: {rms_error_m:.3f} m")
 
         if rms_error_m > 0.1:
-            print("WARNING: RMS error is fairly high (>0.1 m). Consider re-capturing with more/cleaner samples "
-                "before trusting this calibration for flight.")
+            print("WARNING: RMS error is fairly high (>0.1 m). Consider re-capturing with "
+                  "better lighting or target positioning before trusting this calibration for flight.")
 
         # Save to calibration.json
-        self.save(optical_constant, samples, rms_error_m)
+        self.save(optical_constant, distance_m, collected_areas, rms_error_m)
         print(f"Saved calibration to {self._config.file}")
 
         # Also update config.yaml with the new optical constant
