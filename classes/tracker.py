@@ -113,7 +113,6 @@ class DeepSortTracker(Tracker):
 
 # Factory function that creates the appropriate Tracker instance based on the configuration
 def create_tracker(config, model) -> Tracker:
-    """Factory: builds the right Tracker subclass from config.tracker.backend."""
     backend = config.tracker.backend
 
     if backend == "bytetrack":
