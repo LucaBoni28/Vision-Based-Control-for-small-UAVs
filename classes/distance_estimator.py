@@ -25,7 +25,7 @@ class DistanceEstimator:
         self._config = calibration
         self._camera = camera
         self._detector = detector
-        self._optical_constant
+        self._optical_constant = None
         self.load()
 
     # Loads the calibration from the specified file, or uses the fallback optical constant if the file does not exist
@@ -146,7 +146,7 @@ class DistanceEstimator:
             elif key == ord('q'):
                 break           
 
-        cv2.destroyWindows(window_name)
+        cv2.destroyWindow(window_name)
 
         if len(samples) < 2:
             print(f"\nOnly {len(samples)} sample(s) captured — need at least 2 to fit. Calibration NOT saved.")
