@@ -82,14 +82,9 @@ def main() -> None:
 
         elif key == ord('c'):
             if not calibrating:
-                print("\n=== Remote Calibration ===")
-                print("1. Place the target object at a known distance in front of the camera.")
-                if config.target_selection.mode == "manual":
-                    print("2. Lock onto the target by clicking on it in the video window.")
-                
-                # Prompt for distance on the PC terminal
+                # Prompt for distance on the PC terminal (this freezes the stream)
                 try:
-                    dist_input = input("3. Enter the known distance in meters: ").strip()
+                    dist_input = input("\n[Calibration] Enter the known distance in meters: ").strip()
                     distance_m = float(dist_input)
                     if distance_m <= 0:
                         print("Distance must be > 0. Calibration cancelled.")
@@ -98,9 +93,15 @@ def main() -> None:
                     print("Invalid number. Calibration cancelled.")
                     continue
 
+                # Once distance is entered, print instructions for what to do next with the live stream active
+                print("\n=== Remote Calibration Started ===")
+                print("1. Place the target object in front of the camera at the set distance.")
+                if config.target_selection.mode == "manual":
+                    print("2. Lock onto the target by clicking on it in the video window.")
+                print(f"Recording samples at {distance_m:.2f}m. Press 'c' again in the video window to stop.")
+
                 command_sender.send_calibrate_start(distance_m)
                 calibrating = True
-                print(f"Sent CALIBRATE_START({distance_m:.2f}m) to Jetson. Press 'c' again to stop recording.")
             else:
                 command_sender.send_calibrate_stop()
                 calibrating = False
