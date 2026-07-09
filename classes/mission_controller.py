@@ -350,8 +350,13 @@ class MissionController:
                     cv2.arrowedLine(frame, (center_x, center_y), (bb_center_x, bb_center_y),
                                      (0, 0, 255), 5, tipLength=0.05)
 
-        # Draw FPS in the top right
-        cv2.putText(frame, f"FPS: {fps:.1f}", (frame.shape[1] - 150, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        # Draw FPS in the top right (dynamically aligned to prevent cutoff)
+        fps_text = f"FPS: {fps:.1f}"
+        font_scale = 1.1
+        font_thickness = 2
+        (fps_w, fps_h), _ = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+        fps_x = frame.shape[1] - fps_w - 15
+        cv2.putText(frame, fps_text, (fps_x, 35), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), font_thickness)
 
         # Draw calibration feedback in the top left
         if self.distance_estimator.is_recording:
