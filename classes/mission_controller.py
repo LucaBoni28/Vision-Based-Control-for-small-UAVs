@@ -36,7 +36,7 @@ from enum import Enum, auto
 
 import cv2
 
-from classes.click_command import CommandReceiver
+from classes.click_command import CommandReceiver, CMD_CONFIRM, CMD_REJECT
 from classes.target_selector import ManualClickSelector
 
 # Definition of the MissionState enum, which represents the different states of the mission state machine
@@ -112,16 +112,20 @@ class MissionController:
                     print(f"Click ignored: target selection mode is not 'manual'")
 
             elif cmd[0] == "calibrate_start":
-                _, distance_m = cmd
+                _, distance_m, addr = cmd
                 if self.flight.is_armed():
                     print("CALIBRATION REJECTED: drone is ARMED. Disarm first.")
                     self._calibration_warning_until = time.time() + 5.0
+                    self.command_receiver.send_feedback(addr, CMD_REJECT)
                 elif self.distance_estimator.is_recording:
                     print("Calibration already in progress.")
+                    self.command_receiver.send_feedback(addr, CMD_REJECT)
                 else:
                     self.distance_estimator.start_recording(distance_m)
+                    self.command_receiver.send_feedback(addr, CMD_CONFIRM)
 
             elif cmd[0] == "calibrate_stop":
+                _, addr = cmd
                 if self.distance_estimator.is_recording:
                     success = self.distance_estimator.stop_recording()
                     if success:

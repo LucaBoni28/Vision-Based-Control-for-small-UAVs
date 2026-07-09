@@ -9,6 +9,10 @@
 #           CMD_CLICK (0x01)            + two floats (norm_x, norm_y)
 #           CMD_CALIBRATE_START (0x02)  + one float  (distance_m)
 #           CMD_CALIBRATE_STOP (0x03)   + (no payload)
+#
+#         Feedback responses sent from Jetson back to Ground Station:
+#           CMD_CONFIRM (0x04)          + (no payload)
+#           CMD_REJECT (0x05)           + (no payload)
 ###############################################################################
 
 import socket
@@ -20,10 +24,15 @@ CMD_CLICK = 0x01
 CMD_CALIBRATE_START = 0x02
 CMD_CALIBRATE_STOP = 0x03
 
+# Response constants
+CMD_CONFIRM = 0x04
+CMD_REJECT = 0x05
+
 # Struct formats (big-endian)
 _FMT_CLICK = ">Bff"           # type + norm_x + norm_y
 _FMT_CAL_START = ">Bf"        # type + distance_m
 _FMT_CAL_STOP = ">B"          # type only
+_FMT_RESPONSE = ">B"          # type only
 
 _SIZE_CLICK = struct.calcsize(_FMT_CLICK)
 _SIZE_CAL_START = struct.calcsize(_FMT_CAL_START)
@@ -42,10 +51,32 @@ class CommandSender:
         message = struct.pack(_FMT_CLICK, CMD_CLICK, norm_x, norm_y)
         self._socket.sendto(message, self._addr)
 
-    # Sends a calibration start command with the known distance in meters
-    def send_calibrate_start(self, distance_m: float) -> None:
+    # Sends a calibration start command and waits for Jetson to confirm or reject.
+    # Returns True if calibration started successfully, False if rejected (e.g. drone armed) or timed out.
+    def send_calibrate_start(self, distance_m: float) -> bool:
         message = struct.pack(_FMT_CAL_START, CMD_CALIBRATE_START, distance_m)
         self._socket.sendto(message, self._addr)
+
+        # Wait up to 500ms for a response
+        self._socket.settimeout(0.5)
+        try:
+            data, _ = self._socket.recvfrom(1024)
+            if len(data) >= 1:
+                resp_type = data[0]
+                if resp_type == CMD_CONFIRM:
+                    return True
+                elif resp_type == CMD_REJECT:
+                    print("[Calibration] Rejected by Jetson: Drone is armed or already calibrating!")
+                    return False
+        except socket.timeout:
+            print("[Calibration] Warning: No response from Jetson. Assuming started.")
+            return True
+        except Exception as e:
+            print(f"[Calibration] Error receiving feedback: {e}")
+            return True
+        finally:
+            self._socket.settimeout(None)
+        return True
 
     # Sends a calibration stop command
     def send_calibrate_stop(self) -> None:
@@ -61,16 +92,24 @@ class CommandReceiver:
         self._socket.bind(("0.0.0.0", command_link_config.port))
         self._socket.setblocking(False)
 
+    # Sends feedback status back to the sender at the given address
+    def send_feedback(self, addr, status_type: int) -> None:
+        try:
+            message = struct.pack(_FMT_RESPONSE, status_type)
+            self._socket.sendto(message, addr)
+        except Exception as e:
+            print(f"CommandReceiver: failed to send feedback to {addr}: {e}")
+
     # Polls for all commands received since the last call.
     # Returns a list of tuples:
     #   ("click", norm_x, norm_y)
-    #   ("calibrate_start", distance_m)
-    #   ("calibrate_stop",)
+    #   ("calibrate_start", distance_m, addr)
+    #   ("calibrate_stop", addr)
     def poll_commands(self):
         commands = []
         while True:
             try:
-                data, _addr = self._socket.recvfrom(1024)
+                data, addr = self._socket.recvfrom(1024)
             except BlockingIOError:
                 break
 
@@ -85,10 +124,10 @@ class CommandReceiver:
 
             elif cmd_type == CMD_CALIBRATE_START and len(data) == _SIZE_CAL_START:
                 _, distance_m = struct.unpack(_FMT_CAL_START, data)
-                commands.append(("calibrate_start", distance_m))
+                commands.append(("calibrate_start", distance_m, addr))
 
             elif cmd_type == CMD_CALIBRATE_STOP and len(data) == _SIZE_CAL_STOP:
-                commands.append(("calibrate_stop",))
+                commands.append(("calibrate_stop", addr))
 
             else:
                 print(f"CommandReceiver: unknown command type={cmd_type}, len={len(data)}")
