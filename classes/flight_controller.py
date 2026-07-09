@@ -33,6 +33,7 @@ class FlightController:
         self.master = None
         self._attitude = Attitude(roll=0.0, pitch=0.0, yaw=0.0)
         self._global_position: Optional[GlobalPosition] = None
+        self._last_heartbeat = None
 
     # Connects to the flight controller via MAVLink, waits for a heartbeat, and requests attitude data at the specified stream rate
     def connect(self) -> None:
@@ -45,6 +46,7 @@ class FlightController:
 
         print("Bridge open. Listening for ArduPilot heartbeat...")
         self.master.wait_heartbeat()
+        self._last_heartbeat = self.master.messages.get("HEARTBEAT")
 
         print("TARGET ACQUIRED: Heartbeat Received!")
         print(f"System ID: {self.master.target_system}")
@@ -57,6 +59,18 @@ class FlightController:
             self._config.attitude_stream_rate_hz,
             1,
         )
+
+    # Polls for a new HEARTBEAT message from the flight controller, updating the stored heartbeat
+    def poll_heartbeat(self) -> None:
+        msg = self.master.recv_match(type="HEARTBEAT", blocking=False)
+        if msg:
+            self._last_heartbeat = msg
+
+    # Returns True if the drone is currently armed, based on the latest heartbeat
+    def is_armed(self) -> bool:
+        if self._last_heartbeat is None:
+            return False
+        return bool(self._last_heartbeat.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
 
     @property
     def target_system(self):

@@ -36,6 +36,9 @@ from enum import Enum, auto
 
 import cv2
 
+from classes.click_command import CommandReceiver
+from classes.target_selector import ManualClickSelector
+
 # Definition of the MissionState enum, which represents the different states of the mission state machine
 class MissionState(Enum):
     NAVIGATING_TO_WAYPOINT = auto()
@@ -46,9 +49,10 @@ class MissionState(Enum):
 # Definition of the MissionController class, which orchestrates the main loop of the tracking system,
 class MissionController:
     # Initializes the MissionController with the given configuration, camera source, flight controller,
-    # video streamer, tracker, target selector, distance estimator, and optional waypoint manager
+    # video streamer, tracker, target selector, distance estimator, detector, command receiver, and optional waypoint manager
     def __init__(self, config, camera, flight, streamer, tracker, target_selector,
-                 distance_estimator, waypoint_manager=None):
+                 distance_estimator, detector, command_receiver: CommandReceiver,
+                 waypoint_manager=None):
         self.config = config
         self.camera = camera
         self.flight = flight
@@ -56,6 +60,8 @@ class MissionController:
         self.tracker = tracker
         self.target_selector = target_selector
         self.distance_estimator = distance_estimator
+        self.detector = detector
+        self.command_receiver = command_receiver
         self.waypoint_manager = waypoint_manager
 
         c = config.control
@@ -91,6 +97,40 @@ class MissionController:
         self._prev_error_area = 0.0
         self._prev_time = time.time()
 
+    # Dispatches commands received from the Ground Station via the CommandReceiver.
+    # Forwards click commands to ManualClickSelector, handles calibration start/stop.
+    def _dispatch_commands(self) -> None:
+        commands = self.command_receiver.poll_commands()
+        for cmd in commands:
+            if cmd[0] == "click":
+                _, norm_x, norm_y = cmd
+                if isinstance(self.target_selector, ManualClickSelector):
+                    self.target_selector.set_pending_click(norm_x, norm_y)
+                    print(f"Click received: ({norm_x:.2f}, {norm_y:.2f})")
+                else:
+                    print(f"Click ignored: target selection mode is not 'manual'")
+
+            elif cmd[0] == "calibrate_start":
+                _, distance_m = cmd
+                if self.flight.is_armed():
+                    print("CALIBRATION REJECTED: drone is ARMED. Disarm first.")
+                elif self.distance_estimator.is_recording:
+                    print("Calibration already in progress.")
+                else:
+                    self.distance_estimator.start_recording(distance_m)
+
+            elif cmd[0] == "calibrate_stop":
+                if self.distance_estimator.is_recording:
+                    success = self.distance_estimator.stop_recording()
+                    if success:
+                        # Update the target area with the new calibration
+                        self._target_area = self.distance_estimator.target_area(
+                            self.config.calibration.desired_stopping_distance_m
+                        )
+                        print(f"Target area updated to {self._target_area:.0f} px")
+                else:
+                    print("No calibration recording in progress.")
+
     # Runs the main loop of the mission controller, reading frames from the camera,
     # processing them according to the current mission state, and streaming the results
     def run(self) -> None:
@@ -98,6 +138,12 @@ class MissionController:
             success, frame = self.camera.read()
             if not success:
                 break
+
+            # Poll for commands from the Ground Station (clicks, calibration)
+            self._dispatch_commands()
+
+            # Poll heartbeat to keep armed state up to date
+            self.flight.poll_heartbeat()
 
             if self.waypoint_manager is not None:
                 self._process_mission_frame(frame)
@@ -303,6 +349,17 @@ class MissionController:
                                      (0, 0, 255), 5, tipLength=0.05)
 
         cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
+        # If calibration is recording, feed detections to the distance estimator and draw overlay
+        if self.distance_estimator.is_recording:
+            detections = self.detector.detect(frame)
+            self.distance_estimator.record_sample(detections)
+            # Draw REC indicator and sample count
+            cv2.circle(frame, (frame.shape[1] - 30, 30), 12, (0, 0, 255), -1)
+            cv2.putText(frame, "REC", (frame.shape[1] - 80, 38),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(frame, f"Samples: {self.distance_estimator.sample_count}",
+                        (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         if not target_found_this_frame and self._locked_id is not None:
             self._timeout_frames += 1

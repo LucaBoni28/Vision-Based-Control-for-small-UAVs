@@ -52,26 +52,26 @@ def main() -> None:
     print(f"Tracker backend: {config.tracker.backend}")
     detector = YoloDetector(model, config.detection)
 
-    # Initialize the command receiver if manual target selection is enabled
-    command_receiver = None
-    if config.target_selection.mode == "manual":
-        command_receiver = CommandReceiver(config.command_link)
-        print(f"Listening for operator clicks on UDP port {config.command_link.port}")
-        print(f"Command receiver: {command_receiver}")
-   
     # Create the target selector based on the configuration
-    target_selector = create_target_selector(config, command_receiver)
+    target_selector = create_target_selector(config)
     print(f"Target selection mode: {config.target_selection.mode}")
+
+    # Initialize the command receiver (used for clicks and remote calibration in any mode)
+    command_receiver = CommandReceiver(config.command_link)
+    print(f"Listening for Ground Station commands on UDP port {config.command_link.port}")
 
     # Initialize the video streamer
     streamer = VideoStreamer(config.video_link)
     streamer.connect()
 
     # Initialize the distance estimator
-    distance_estimator = DistanceEstimator(config.calibration, camera, detector, streamer)
+    distance_estimator = DistanceEstimator(config.calibration)
 
     # Create the mission controller and run the mission
-    mission = MissionController(config, camera, flight, streamer, tracker, target_selector, distance_estimator)
+    mission = MissionController(
+        config, camera, flight, streamer, tracker, target_selector,
+        distance_estimator, detector, command_receiver
+    )
     mission.run()
 
 # Run the main function if this script is executed directly
