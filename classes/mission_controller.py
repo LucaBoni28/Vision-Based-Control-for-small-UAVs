@@ -111,6 +111,17 @@ class MissionController:
                 else:
                     print(f"Click ignored: target selection mode is not 'manual'")
 
+            elif cmd[0] == "calibrate_check":
+                _, addr = cmd
+                if self.flight.is_armed():
+                    print("CALIBRATION CHECK REJECTED: drone is ARMED.")
+                    self._calibration_warning_until = time.time() + 5.0
+                    self.command_receiver.send_feedback(addr, CMD_REJECT)
+                elif self.distance_estimator.is_recording:
+                    self.command_receiver.send_feedback(addr, CMD_REJECT)
+                else:
+                    self.command_receiver.send_feedback(addr, CMD_CONFIRM)
+
             elif cmd[0] == "calibrate_start":
                 _, distance_m, addr = cmd
                 if self.flight.is_armed():
@@ -364,11 +375,11 @@ class MissionController:
 
         # Draw FPS in the top right (dynamically aligned to prevent cutoff)
         fps_text = f"FPS: {fps:.1f}"
-        font_scale = 1.1
-        font_thickness = 2
+        font_scale = 1.3
+        font_thickness = 3
         (fps_w, fps_h), _ = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
-        fps_x = frame.shape[1] - fps_w - 15
-        cv2.putText(frame, fps_text, (fps_x, 35), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), font_thickness)
+        fps_x = frame.shape[1] - fps_w - 30
+        cv2.putText(frame, fps_text, (fps_x, 45), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), font_thickness)
 
         # Draw calibration feedback in the top left
         if self.distance_estimator.is_recording:

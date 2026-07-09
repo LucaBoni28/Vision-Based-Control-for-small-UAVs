@@ -82,6 +82,11 @@ def main() -> None:
 
         elif key == ord('c'):
             if not calibrating:
+                # Check with Jetson first if calibration is allowed (e.g. drone not armed)
+                if not command_sender.send_calibrate_check():
+                    print("Calibration check failed (rejected by Jetson).")
+                    continue
+
                 # Prompt for distance on the PC terminal (this freezes the stream)
                 try:
                     dist_input = input("\n[Calibration] Enter the known distance in meters: ").strip()
@@ -93,15 +98,17 @@ def main() -> None:
                     print("Invalid number. Calibration cancelled.")
                     continue
 
-                # Once distance is entered, print instructions for what to do next with the live stream active
-                print("\n=== Remote Calibration Started ===")
-                print("1. Place the target object in front of the camera at the set distance.")
-                if config.target_selection.mode == "manual":
-                    print("2. Lock onto the target by clicking on it in the video window.")
-                print(f"Recording samples at {distance_m:.2f}m. Press 'c' again in the video window to stop.")
-
-                command_sender.send_calibrate_start(distance_m)
-                calibrating = True
+                # Send command and check confirmation response from Jetson
+                if command_sender.send_calibrate_start(distance_m):
+                    # Once distance is entered and confirmed, print instructions for what to do next with the live stream active
+                    print("\n=== Remote Calibration Started ===")
+                    print("1. Place the target object in front of the camera at the set distance.")
+                    if config.target_selection.mode == "manual":
+                        print("2. Lock onto the target by clicking on it in the video window.")
+                    print(f"Recording samples at {distance_m:.2f}m. Press 'c' again in the video window to stop.")
+                    calibrating = True
+                else:
+                    print("Calibration failed to start (rejected by Jetson).")
             else:
                 command_sender.send_calibrate_stop()
                 calibrating = False
