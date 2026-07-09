@@ -23,14 +23,16 @@ This journal is used to track daily progress, challenges, and solutions to help 
 - **Live Calibration Preview**: Overhauled the calibration process in `distance_estimator.py` to use a multithreaded live preview. The camera now streams continuously on a background thread while the main thread handles user input (`ENTER` to start/stop recording), saving per-frame area samples instead of just an average.
 
 #### Wednesday, July 8
-- *No direct code commits. (Feel free to add any research, reading, or meetings here)*
+- **Drone Simulator**: Created `pc_test/drone_simulator.py`, an interactive Tkinter/Matplotlib GUI application. It models drone kinematics, actuator lag, virtual camera perspective projection, and visual tracking errors. This allows for rapid testing and tuning of PD, PID, and Sliding Mode Control (SMC) strategies without flying the actual hardware.
 
 #### Thursday, July 9
 - *Started journal to track progress*
 - **Calibration Safety Interlocks**: Added robust safety checks to prevent calibrating while the drone is flying. Created a new network command (`CMD_CALIBRATE_CHECK`, `0x06`) so the Ground Station can ask the Jetson if calibration is allowed. If the drone is `ARMED`, it rejects the request and displays a massive red "WARNING: DRONE ARMED! DISARM TO CALIBRATE" overlay on the video feed.
 - **Target Lock Requirement**: The calibration process now waits for a target to be locked (`self._locked_id`) before recording samples. It also correctly uses the tracked target's specific area rather than just blindly picking the largest detection in the frame.
 - **Config Fixes**: Fixed a naming mismatch in the configuration (`fallback_optical_constant` was changed to `optical_constant` in `config.yaml` and `config.py`).
-- 
+- **Local Testing Environment**: Implemented a complete local testing pipeline in the untracked `pc_test/` folder.
+  - `test_local.py`: Runs the full vision pipeline on a PC using a webcam (`WebcamCameraSource`) and a dummy flight controller (`DummyFlightController`), bypassing the need for a Jetson Orin NX or MAVLink connection.
+  - `stream_video_local.py`: A local version of the Ground Station streaming script that receives the processed video stream on `localhost`, processes mouse clicks for target selection, and handles remote calibration.
 
 #### Friday, July 10
 - 
