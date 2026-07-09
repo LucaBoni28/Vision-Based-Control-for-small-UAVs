@@ -76,6 +76,7 @@ class MissionController:
         self._target_area = distance_estimator.target_area(config.calibration.desired_stopping_distance_m)
         self._max_timeout = config.tracker.max_timeout_frames
         self._prev_time_fps = 0.0
+        self._calibration_warning_until = 0.0
 
         self._reset_tracking_memory()
 
@@ -114,6 +115,7 @@ class MissionController:
                 _, distance_m = cmd
                 if self.flight.is_armed():
                     print("CALIBRATION REJECTED: drone is ARMED. Disarm first.")
+                    self._calibration_warning_until = time.time() + 5.0
                 elif self.distance_estimator.is_recording:
                     print("Calibration already in progress.")
                 else:
@@ -348,18 +350,25 @@ class MissionController:
                     cv2.arrowedLine(frame, (center_x, center_y), (bb_center_x, bb_center_y),
                                      (0, 0, 255), 5, tipLength=0.05)
 
-        cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        # Draw FPS in the top right
+        cv2.putText(frame, f"FPS: {fps:.1f}", (frame.shape[1] - 150, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-        # If calibration is recording, feed detections to the distance estimator and draw overlay
+        # Draw calibration feedback in the top left
         if self.distance_estimator.is_recording:
+            # If recording, feed detections to the distance estimator and draw REC overlay
             detections = self.detector.detect(frame)
             self.distance_estimator.record_sample(detections)
-            # Draw REC indicator and sample count
-            cv2.circle(frame, (frame.shape[1] - 30, 30), 12, (0, 0, 255), -1)
-            cv2.putText(frame, "REC", (frame.shape[1] - 80, 38),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.circle(frame, (20, 22), 10, (0, 0, 255), -1)
+            cv2.putText(frame, "REC", (38, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             cv2.putText(frame, f"Samples: {self.distance_estimator.sample_count}",
-                        (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                        (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        else:
+            # If not recording, show hint
+            cv2.putText(frame, "Press 'c' to calibrate", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+        # Display on-screen warning if calibration was rejected because the drone is armed
+        if time.time() < self._calibration_warning_until:
+            cv2.putText(frame, "WARNING: Disarm drone to calibrate!", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
         if not target_found_this_frame and self._locked_id is not None:
             self._timeout_frames += 1
