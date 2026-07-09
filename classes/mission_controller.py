@@ -147,6 +147,12 @@ class MissionController:
             # Poll heartbeat to keep armed state up to date
             self.flight.poll_heartbeat()
 
+            # Safety check: abort recording immediately if drone is armed
+            if self.distance_estimator.is_recording and self.flight.is_armed():
+                print("SAFETY INTERLOCK: Drone armed during calibration. Aborting recording!")
+                self.distance_estimator.abort_recording()
+                self._calibration_warning_until = time.time() + 5.0
+
             if self.waypoint_manager is not None:
                 self._process_mission_frame(frame)
             else:
@@ -375,7 +381,32 @@ class MissionController:
 
         # Display on-screen warning if calibration was rejected because the drone is armed
         if time.time() < self._calibration_warning_until:
-            cv2.putText(frame, "WARNING: Disarm drone to calibrate!", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            # Draw semi-transparent dark red full-screen overlay
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 150), -1)
+            cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
+
+            # Draw massive centered text
+            text1 = "WARNING: DRONE ARMED!"
+            text2 = "DISARM TO CALIBRATE"
+            
+            font_scale = 1.3
+            font_thickness = 3
+            (w1, h1), _ = cv2.getTextSize(text1, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+            (w2, h2), _ = cv2.getTextSize(text2, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+            
+            x1 = (frame.shape[1] - w1) // 2
+            y1 = (frame.shape[0] - h1) // 2 - 25
+            x2 = (frame.shape[1] - w2) // 2
+            y2 = (frame.shape[0] - h2) // 2 + 25
+
+            # Text border/shadow (black) for readability
+            cv2.putText(frame, text1, (x1+2, y1+2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), font_thickness + 2)
+            cv2.putText(frame, text2, (x2+2, y2+2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), font_thickness + 2)
+            
+            # Main text (white and red)
+            cv2.putText(frame, text1, (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 255), font_thickness)
+            cv2.putText(frame, text2, (x2, y2), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thickness)
 
         if not target_found_this_frame and self._locked_id is not None:
             self._timeout_frames += 1

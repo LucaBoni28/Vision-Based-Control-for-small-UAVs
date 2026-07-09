@@ -104,6 +104,12 @@ class DistanceEstimator:
             return
         self._recorded_areas.append(float(area))
 
+    # Aborts the current calibration recording without saving.
+    def abort_recording(self) -> None:
+        self._recording = False
+        self._recorded_areas = []
+        print("=== Calibration: ABORTED ===")
+
     # Stops recording, fits the optical constant, saves calibration, and returns to idle.
     # Returns True if calibration was successful, False if no samples were collected.
     def stop_recording(self) -> bool:
