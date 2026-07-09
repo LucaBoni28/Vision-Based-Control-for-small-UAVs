@@ -102,7 +102,7 @@ class DistanceEstimator:
     def record_sample(self, area: float) -> None:
         if not self._recording:
             return
-        self._recorded_areas.append(area)
+        self._recorded_areas.append(float(area))
 
     # Stops recording, fits the optical constant, saves calibration, and returns to idle.
     # Returns True if calibration was successful, False if no samples were collected.
@@ -119,6 +119,8 @@ class DistanceEstimator:
         optical_constant, rms_error_m = DistanceEstimator.fit_single_distance(
             self._recording_distance_m, self._recorded_areas
         )
+        optical_constant = float(optical_constant)
+        rms_error_m = float(rms_error_m)
         print(f"Fitted optical_constant = {optical_constant:.1f}")
         print(f"RMS distance error across {len(self._recorded_areas)} samples: {rms_error_m:.3f} m")
 
