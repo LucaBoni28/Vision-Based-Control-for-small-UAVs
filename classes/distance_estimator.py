@@ -45,10 +45,10 @@ class DistanceEstimator:
                 f"RMS error {data.get('rms_error_m', float('nan')):.3f} m)"
             )
         else:
-            self._optical_constant = self._config.fallback_optical_constant
+            self._optical_constant = self._config.optical_constant
             print(
                 f"Calibration file '{path}' not found. "
-                f"Using fallback optical_constant={self._optical_constant:.1f}. "
+                f"Using default optical_constant={self._optical_constant:.1f}. "
                 f"Press 'c' on the Ground Station to calibrate."
             )
 
@@ -183,7 +183,7 @@ class DistanceEstimator:
         return k, rms_error_m
 
     def _update_config_yaml(self, optical_constant: float) -> None:
-        """Update the fallback_optical_constant in config.yaml with the calibrated value."""
+        """Update the optical_constant in config.yaml with the calibrated value."""
         try:
             import yaml
             config_path = Path("classes/config.yaml")
@@ -194,7 +194,7 @@ class DistanceEstimator:
                 config_data = yaml.safe_load(f)
 
             if "calibration" in config_data:
-                config_data["calibration"]["fallback_optical_constant"] = optical_constant
+                config_data["calibration"]["optical_constant"] = optical_constant
                 
                 with open(config_path, "w") as f:
                     yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)

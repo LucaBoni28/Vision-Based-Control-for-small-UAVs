@@ -94,7 +94,7 @@ class ControlConfig:
 class CalibrationConfig:
     file: str
     desired_stopping_distance_m: float
-    fallback_optical_constant: float
+    optical_constant: float
     frames_per_sample: int = 30  # Number of frames to capture and average per distance sample
 
 
@@ -217,8 +217,8 @@ class AppConfig:
             )
         if self.control.r_stop <= 0:
             errors.append("control.r_stop must be > 0")
-        if self.calibration.fallback_optical_constant <= 0:
-            errors.append("calibration.fallback_optical_constant must be > 0")
+        if self.calibration.optical_constant <= 0:
+            errors.append("calibration.optical_constant must be > 0")
         if self.calibration.desired_stopping_distance_m <= 0:
             errors.append("calibration.desired_stopping_distance_m must be > 0")
         if self.tracker.backend == "deepsort":
