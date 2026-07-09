@@ -98,16 +98,10 @@ class DistanceEstimator:
         self._recorded_areas = []
         print(f"=== Calibration: RECORDING at {distance_m:.2f} m ===")
 
-    # Records a single frame's detection during calibration.
-    # Uses the largest detection (by bounding box area) if multiple are present.
-    def record_sample(self, detections: List[Detection]) -> None:
-        if not self._recording or not detections:
+    # Records a single frame's target area during calibration.
+    def record_sample(self, area: float) -> None:
+        if not self._recording:
             return
-
-        # Use the largest detection (by bounding box area)
-        largest = max(detections, key=lambda d: (d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1]))
-        x1, y1, x2, y2 = largest.bbox
-        area = (x2 - x1) * (y2 - y1)
         self._recorded_areas.append(area)
 
     # Stops recording, fits the optical constant, saves calibration, and returns to idle.

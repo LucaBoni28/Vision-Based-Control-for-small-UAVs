@@ -82,9 +82,14 @@ def main() -> None:
 
         elif key == ord('c'):
             if not calibrating:
+                print("\n=== Remote Calibration ===")
+                print("1. Place the target object at a known distance in front of the camera.")
+                if config.target_selection.mode == "manual":
+                    print("2. Lock onto the target by clicking on it in the video window.")
+                
                 # Prompt for distance on the PC terminal
                 try:
-                    dist_input = input("\n[Calibration] Enter the known distance in meters: ").strip()
+                    dist_input = input("3. Enter the known distance in meters: ").strip()
                     distance_m = float(dist_input)
                     if distance_m <= 0:
                         print("Distance must be > 0. Calibration cancelled.")

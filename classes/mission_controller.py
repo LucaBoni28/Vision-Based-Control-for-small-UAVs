@@ -291,6 +291,8 @@ class MissionController:
                     w = x2 - x1
                     h = y2 - y1
                     current_area = w * h
+                    if self.distance_estimator.is_recording:
+                        self.distance_estimator.record_sample(current_area)
 
                     e_area = (self._target_area - current_area) / self._target_area
                     
@@ -360,13 +362,13 @@ class MissionController:
 
         # Draw calibration feedback in the top left
         if self.distance_estimator.is_recording:
-            # If recording, feed detections to the distance estimator and draw REC overlay
-            detections = self.detector.detect(frame)
-            self.distance_estimator.record_sample(detections)
+            # If recording, draw REC overlay
             cv2.circle(frame, (20, 22), 10, (0, 0, 255), -1)
             cv2.putText(frame, "REC", (38, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
             cv2.putText(frame, f"Samples: {self.distance_estimator.sample_count}",
                         (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            if self._locked_id is None:
+                cv2.putText(frame, "WAITING FOR TARGET LOCK", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
         else:
             # If not recording, show hint
             cv2.putText(frame, "Press 'c' to calibrate", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
