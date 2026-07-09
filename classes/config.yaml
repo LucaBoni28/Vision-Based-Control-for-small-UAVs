@@ -55,7 +55,7 @@ display:
 target_selection:
   mode: manual
 command_link:
-  jetson_host: 192.168.1.50
+  jetson_host: 172.29.249.164
   port: 5006
 waypoints:
   loop_mission: true
