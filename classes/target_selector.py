@@ -69,8 +69,8 @@ class ManualClickSelector(TargetSelector):
             print(f"Click ignored: no bounding box contains the click at ({click_x:.0f}, {click_y:.0f})")
             return None
 
-        # Choose the track with the smallest area (most precise detection)
-        best_id, best_area = min(containing_tracks, key=lambda t: t[1])
+        # Choose the track with the largest area (closest object)
+        best_id, best_area = max(containing_tracks, key=lambda t: t[1])
         print(f"Manual selection: locking onto track {best_id} (click inside bbox, area={best_area:.0f}px)")
         return best_id
 

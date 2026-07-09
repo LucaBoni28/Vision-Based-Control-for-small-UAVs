@@ -30,16 +30,17 @@ tracker:
     n_init: 1
     max_iou_distance: 0.8
 control:
-  k_p_yaw: 1.0
-  k_d_yaw: 0.05
-  k_p_vz: 1.0
-  k_d_vz: 0.05
-  k_p_vx: 1.0
+  k_p_yaw: 4.231974921630094
+  k_d_yaw: 0.3887147335423197
+  k_p_vz: 3.714733542319749
+  k_d_vz: 0.5266457680250783
+  k_p_vx: 1.5517241379310347
   r_stop: 0.8
   yaw_deadzone: 0.03
   vz_deadzone: 0.03
   area_deadzone: 0.05
   max_derivative_dt: 0.5
+  k_d_vx: 0.9529780564263323
 calibration:
   file: calibration.json
   desired_stopping_distance_m: 0.6

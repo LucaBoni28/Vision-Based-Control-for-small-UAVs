@@ -64,6 +64,7 @@ class MissionController:
         self._k_p_vz = c.k_p_vz
         self._k_d_vz = c.k_d_vz
         self._k_p_vx = c.k_p_vx
+        self._k_d_vx = c.k_d_vx
         self._r_stop = c.r_stop
 
         self._target_area = distance_estimator.target_area(config.calibration.desired_stopping_distance_m)
@@ -87,6 +88,7 @@ class MissionController:
         self._timeout_frames = 0
         self._prev_error_y = 0.0
         self._prev_error_x = 0.0
+        self._prev_error_area = 0.0
         self._prev_time = time.time()
 
     # Runs the main loop of the mission controller, reading frames from the camera,
@@ -237,43 +239,44 @@ class MissionController:
                     e_mag = math.sqrt(e_x**2 + e_y_compensated**2)
                     e_mag = min(1.0, e_mag)
 
+                    # Forward velocity from bounding-box area vs. target area (PD control)
+                    w = x2 - x1
+                    h = y2 - y1
+                    current_area = w * h
+
+                    e_area = (self._target_area - current_area) / self._target_area
+                    
                     current_time = time.time()
                     dt = current_time - self._prev_time
 
                     if 0 < dt < self.config.control.max_derivative_dt:
                         derivative_y = (e_y_compensated - self._prev_error_y) / dt
                         derivative_x = (e_x - self._prev_error_x) / dt
+                        derivative_area = (e_area - self._prev_error_area) / dt
                     else:
                         derivative_y = 0
                         derivative_x = 0
+                        derivative_area = 0
 
                     # PD controller for omega_z and v_z
                     omega_z = self._k_p_yaw * e_x + self._k_d_yaw * derivative_x
                     v_z = self._k_p_vz * e_y_compensated + self._k_d_vz * derivative_y
+                    # PD controller for v_x
+                    v_x_request = self._k_p_vx * e_area + self._k_d_vx * derivative_area
 
-                    if abs(omega_z) < self.config.control.yaw_deadzone:
-                        omega_z = 0
-                    if abs(v_z) < self.config.control.vz_deadzone:
-                        v_z = 0
-
-                    # Forward velocity from bounding-box area vs. target area
-                    w = x2 - x1
-                    h = y2 - y1
-                    current_area = w * h
-
-                    e_area = (self._target_area - current_area) / self._target_area
-                    v_x_request = self._k_p_vx * e_area
-
-                    if abs(e_area) < self.config.control.area_deadzone:
-                        v_x_request = 0.0
+                    # Yaw and vertical velocity deadzone
+                    if abs(omega_z) < self.config.control.yaw_deadzone: omega_z = 0
+                    if abs(v_z) < self.config.control.vz_deadzone: v_z = 0
+                    # Area deadzone
+                    if abs(e_area) < self.config.control.area_deadzone: v_x_request = 0.0
 
                     # Speed limit for center alignment
-                    if e_mag >= self._r_stop:
-                        v_x_limit = 0.0
+                    if e_mag >= self._r_stop: v_x_limit = 0.0
                     else:
                         e_scaled = e_mag / self._r_stop
                         v_x_limit = self._k_p_vx * (1 - e_scaled**2)
 
+                    # Selection v_x final value
                     if v_x_request > 0:
                         v_x = min(v_x_request, v_x_limit)
                     else:
@@ -289,6 +292,7 @@ class MissionController:
 
                     self._prev_error_y = e_y_compensated
                     self._prev_error_x = e_x
+                    self._prev_error_area = e_area
                     self._prev_time = current_time
 
                     # Visual GUI debugging

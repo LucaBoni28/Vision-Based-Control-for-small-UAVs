@@ -82,6 +82,7 @@ class ControlConfig:
     k_p_vz: float
     k_d_vz: float
     k_p_vx: float
+    k_d_vx: float
     r_stop: float
     yaw_deadzone: float
     vz_deadzone: float

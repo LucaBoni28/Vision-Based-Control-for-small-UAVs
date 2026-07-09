@@ -40,16 +40,22 @@ def main() -> None:
     if config.target_selection.mode == "manual":
         # Set up a command sender to send click coordinates back to the Jetson
         command_sender = CommandSender(config.command_link)
-        # Get the window dimensions for normalization
-        window_w = config.display.ground_station_window_width
-        window_h = config.display.ground_station_window_height
+        # The displayed image is always stream_width × stream_height.
+        # OpenCV's mouse callback already reports (x, y) in image pixel
+        # coordinates (it remaps internally for WINDOW_NORMAL), so we
+        # normalize directly by the stream image dimensions.
+        stream_w = config.display.stream_width
+        stream_h = config.display.stream_height
 
         # Define the mouse callback function
         def on_mouse(event, x, y, flags, userdata):
             # Only handle left mouse button clicks
             if event == cv2.EVENT_LBUTTONDOWN:
-                norm_x = x / window_w
-                norm_y = y / window_h
+                norm_x = x / stream_w
+                norm_y = y / stream_h
+                # Clamp to [0, 1] to guard against edge-of-window clicks
+                norm_x = max(0.0, min(1.0, norm_x))
+                norm_y = max(0.0, min(1.0, norm_y))
                 command_sender.send_click(norm_x, norm_y)
                 print(f"Sent click at ({norm_x:.2f}, {norm_y:.2f}) to Jetson")
         # Set the mouse callback for the window
