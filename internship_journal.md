@@ -35,7 +35,8 @@ This journal is used to track daily progress, challenges, and solutions to help 
   - `stream_video_local.py`: A local version of the Ground Station streaming script that receives the processed video stream on `localhost`, processes mouse clicks for target selection, and handles remote calibration.
 
 #### Friday, July 10
-- 
+- Set up the hardware on a wooden sheet in order to test the system around the lab with a real Pixhawk flight controller as soon as the router/wifi module is ready.
+- Already verified the setup using an Ethernet connection, and it works successfully.
 
 ### 💡 Notes for Final Report
 *Jot down architectural decisions, key learnings, or figures you might want to include in the LaTeX report later.*
