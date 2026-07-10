@@ -9,7 +9,7 @@ mavlink:
   source_component: 191
   attitude_stream_rate_hz: 10
 video_link:
-  host: 172.29.249.199
+  host: 127.0.0.1
   port: 5005
 model:
   path: yolo26n.engine
@@ -55,7 +55,7 @@ display:
 target_selection:
   mode: manual
 command_link:
-  jetson_host: 172.29.249.164
+  jetson_host: 127.0.0.1
   port: 5006
 waypoints:
   loop_mission: true
