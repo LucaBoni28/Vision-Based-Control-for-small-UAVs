@@ -109,7 +109,7 @@ class FlightController:
         if time.time() - self._last_vel_log > 1.0:
             log_msg = f"Vel: Vx:{vx:.1f} Vy:{vy:.1f} Vz:{vz:.1f} Y:{yaw_rate:.1f}"
             if self.master:
-                self.master.mav.statustext_send(mavutil.mavlink.MAV_SEVERITY_INFO, log_msg.encode()[:50])
+                self.master.mav.statustext_send(mavutil.mavlink.MAV_SEVERITY_INFO, log_msg)
             self._last_vel_log = time.time()
 
         self.master.mav.set_position_target_local_ned_send(
