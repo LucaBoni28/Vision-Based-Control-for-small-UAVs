@@ -7,7 +7,7 @@ mavlink:
   # connection: /dev/ttyACM0       # Physical Pixhawk via USB serial
   connection: udpin:0.0.0.0:14551  # MAVProxy UDP stream
   source_system: 1
-  source_component: 1
+  source_component: 191
   attitude_stream_rate_hz: 10
 video_link:
   host: 172.29.249.199

@@ -35,6 +35,7 @@ class FlightController:
         self._global_position: Optional[GlobalPosition] = None
         self._last_heartbeat = None
         self._last_vel_log = 0.0
+        self._last_heartbeat_sent = 0.0
 
     # Connects to the flight controller via MAVLink, waits for a heartbeat, and requests attitude data at the specified stream rate
     def connect(self) -> None:
@@ -106,11 +107,23 @@ class FlightController:
     # Sends a velocity command to the flight controller in the body frame, with the specified velocities in m/s and yaw rate in rad/s
     def send_velocity(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:
         import time
-        if time.time() - self._last_vel_log > 1.0:
+        current_time = time.time()
+        
+        if current_time - self._last_heartbeat_sent > 1.0:
+            if self.master:
+                # Send heartbeat so Mission Planner registers this companion computer
+                self.master.mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                    0, 0, 0
+                )
+            self._last_heartbeat_sent = current_time
+
+        if current_time - self._last_vel_log > 1.0:
             log_msg = f"Vel: Vx:{vx:.1f} Vy:{vy:.1f} Vz:{vz:.1f} Y:{yaw_rate:.1f}"
             if self.master:
                 self.master.mav.statustext_send(mavutil.mavlink.MAV_SEVERITY_INFO, log_msg.encode('ascii')[:50])
-            self._last_vel_log = time.time()
+            self._last_vel_log = current_time
 
         self.master.mav.set_position_target_local_ned_send(
             0, self.target_system, self.target_component,
