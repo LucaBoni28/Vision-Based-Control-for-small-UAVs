@@ -44,13 +44,14 @@ This journal is used to track daily progress, challenges, and solutions to help 
 
 ---
 
-## 📅 Template for New Weeks
-*Copy and paste this section when starting a new week.*
-
-## Week X (Month DD - Month DD)
+## Week 2 (July 13 - July 19, 2026)
 
 ### 🎯 Weekly Goals
-- [ ] 
+- [ ] **Headless Jetson Logging**: Forward console logs/outputs from the Jetson to the Ground Station software since the Jetson will run headless in the real application.
+- [ ] **Camera Pitch Control (Servo)**: Implement two modes for camera pitch:
+  - *Manual*: Controlled via a potentiometer on the RC controller.
+  - *Automatic*: System autonomously reads the current pitch and sends a correction signal through the flight controller to a self-leveling servo motor.
+- [ ] **Simulation & Ground Station**: Connect a ground station software (Mission Planner) and set up a smooth, fluent 3D drone simulation in Gazebo. Optimize the Gazebo setup to run better on the struggling PC.
 
 ### 📝 Daily Log
 
