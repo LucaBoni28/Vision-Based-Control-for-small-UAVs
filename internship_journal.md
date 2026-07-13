@@ -47,7 +47,7 @@ This journal is used to track daily progress, challenges, and solutions to help 
 ## Week 2 (July 13 - July 19, 2026)
 
 ### 🎯 Weekly Goals
-- [ ] **Headless Jetson Logging**: Forward console logs/outputs from the Jetson to the Ground Station software since the Jetson will run headless in the real application.
+- [x] **Headless Jetson Logging**: Forward console logs/outputs from the Jetson to the Ground Station software since the Jetson will run headless in the real application.
 - [ ] **Camera Pitch Control (Servo)**: Implement two modes for camera pitch:
   - *Manual*: Controlled via a potentiometer on the RC controller.
   - *Automatic*: System autonomously reads the current pitch and sends a correction signal through the flight controller to a self-leveling servo motor.
@@ -56,7 +56,8 @@ This journal is used to track daily progress, challenges, and solutions to help 
 ### 📝 Daily Log
 
 #### Monday
-- 
+- Successfully connected Mission Planner (Ground Station) to the real Pixhawk on the Jetson over the Wi-Fi network using UDP (after temporarily disabling Windows Firewall).
+- Resolved serial port access conflicts by routing MAVLink telemetry through MAVProxy on the Jetson. The Python control script now connects to a local UDP stream (`udpin:0.0.0.0:14551`) instead of locking `/dev/ttyACM0`, allowing Mission Planner and the vision-control script to run simultaneously.
 
 #### Tuesday
 - 
@@ -71,4 +72,5 @@ This journal is used to track daily progress, challenges, and solutions to help 
 - 
 
 ### 💡 Notes for Final Report
-- 
+- **Physical Hardware vs. Simulation (The EKF Conflict)**: We initially attempted to simulate flight movements (faking a GPS signal) while the physical Pixhawk was sitting on a test bench. However, this is fundamentally flawed due to the flight controller's Extended Kalman Filter (EKF). When the control algorithm commands a velocity, the motors spin up and the fake GPS reports movement. BUT, the physical IMU (accelerometer/gyro) on the bench reports zero acceleration. The EKF instantly detects this contradiction as a massive sensor variance error, triggering a failsafe and rejecting further autonomy commands.
+- **The Solution (SITL)**: The correct approach to simulate flight paths and test vision-control logic without a real flight is to use **Software-In-The-Loop (SITL)**. SITL entirely replaces the physical Pixhawk with a virtual one. Because the virtual Pixhawk simulates *all* sensors (GPS, IMU, Baro, Compass) in perfect unison based on the physics engine, the EKF remains stable. We can run this lightweight SITL directly inside Mission Planner and route the Jetson's MAVLink connection to it via TCP/UDP over the network, allowing full system testing without hardware conflicts.

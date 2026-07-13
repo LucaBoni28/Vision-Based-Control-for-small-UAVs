@@ -108,7 +108,6 @@ class FlightController:
         import time
         if time.time() - self._last_vel_log > 1.0:
             log_msg = f"Vel: Vx:{vx:.1f} Vy:{vy:.1f} Vz:{vz:.1f} Y:{yaw_rate:.1f}"
-            print(log_msg)
             if self.master:
                 self.master.mav.statustext_send(mavutil.mavlink.MAV_SEVERITY_INFO, log_msg.encode()[:50])
             self._last_vel_log = time.time()
