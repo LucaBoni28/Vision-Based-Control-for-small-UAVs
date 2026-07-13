@@ -131,11 +131,18 @@ class FlightController:
             self._last_vel_log = current_time
 
         if self.master:
+            # Temporarily masquerade as the Autopilot component so MAVProxy/Mission Planner doesn't filter it out
+            original_comp = self.master.mav.srcComponent
+            self.master.mav.srcComponent = 1
+            
             time_boot_ms = int(current_time * 1000) % 4294967295
             self.master.mav.named_value_float_send(time_boot_ms, b'CmdVx', vx)
             self.master.mav.named_value_float_send(time_boot_ms, b'CmdVy', vy)
             self.master.mav.named_value_float_send(time_boot_ms, b'CmdVz', vz)
             self.master.mav.named_value_float_send(time_boot_ms, b'CmdYawR', yaw_rate)
+            
+            # Restore original component ID
+            self.master.mav.srcComponent = original_comp
 
         self.master.mav.set_position_target_local_ned_send(
             0, self.target_system, self.target_component,
