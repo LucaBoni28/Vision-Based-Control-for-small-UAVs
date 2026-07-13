@@ -34,6 +34,7 @@ class FlightController:
         self._attitude = Attitude(roll=0.0, pitch=0.0, yaw=0.0)
         self._global_position: Optional[GlobalPosition] = None
         self._last_heartbeat = None
+        self._last_vel_log = 0.0
 
     # Connects to the flight controller via MAVLink, waits for a heartbeat, and requests attitude data at the specified stream rate
     def connect(self) -> None:
@@ -104,6 +105,14 @@ class FlightController:
 
     # Sends a velocity command to the flight controller in the body frame, with the specified velocities in m/s and yaw rate in rad/s
     def send_velocity(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:
+        import time
+        if time.time() - self._last_vel_log > 1.0:
+            log_msg = f"Vel: Vx:{vx:.1f} Vy:{vy:.1f} Vz:{vz:.1f} Y:{yaw_rate:.1f}"
+            print(log_msg)
+            if self.master:
+                self.master.mav.statustext_send(mavutil.mavlink.MAV_SEVERITY_INFO, log_msg.encode()[:50])
+            self._last_vel_log = time.time()
+
         self.master.mav.set_position_target_local_ned_send(
             0, self.target_system, self.target_component,
             mavutil.mavlink.MAV_FRAME_BODY_NED,
