@@ -36,6 +36,7 @@ from classes.target_selector import ManualClickSelector
 from classes.click_command import CommandReceiver
 import time
 import math
+import cv2
 
 
 # Definition of the MissionController class, which orchestrates the main loop of the tracking system,
