@@ -20,11 +20,6 @@ class Attitude:
     pitch: float  # radians
     yaw: float    # radians, 0 = North, clockwise positive (compass convention)
 
-@dataclass
-class GlobalPosition:
-    lat: float
-    lon: float
-    relative_alt_m: float
 
 
 class FlightController:
@@ -33,7 +28,6 @@ class FlightController:
         self._config = mavlink_config
         self.master = None
         self._attitude = Attitude(roll=0.0, pitch=0.0, yaw=0.0)
-        self._global_position: Optional[GlobalPosition] = None
         self._last_heartbeat = None
         self._last_vel_log = 0.0
         self._last_heartbeat_sent = 0.0
@@ -107,17 +101,6 @@ class FlightController:
     def poll_pitch(self) -> float:
         return self.poll_attitude().pitch
 
-    # Polls for a new GLOBAL_POSITION_INT message from the flight controller, returning the most recent GPS fix or None if no fix has ever been received
-    def poll_global_position(self) -> Optional[GlobalPosition]:
-        
-        msg = self.master.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
-        if msg:
-            self._global_position = GlobalPosition(
-                lat=msg.lat / 1e7,
-                lon=msg.lon / 1e7,
-                relative_alt_m=msg.relative_alt / 1000.0,
-            )
-        return self._global_position
 
     # Sends a velocity command to the flight controller in the body frame, with the specified velocities in m/s and yaw rate in rad/s
     def send_velocity(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:

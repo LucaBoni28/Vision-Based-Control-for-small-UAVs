@@ -30,29 +30,20 @@ per frame, for the locked target.
 #         and DistanceEstimator
 ###############################################################################
 
+from classes.click_command import CMD_CONFIRM
+from classes.click_command import CMD_REJECT
+from classes.target_selector import ManualClickSelector
+from classes.click_command import CommandReceiver
 import time
 import math
-from enum import Enum, auto
 
-import cv2
-
-from classes.click_command import CommandReceiver, CMD_CONFIRM, CMD_REJECT
-from classes.target_selector import ManualClickSelector
-
-# Definition of the MissionState enum, which represents the different states of the mission state machine
-class MissionState(Enum):
-    NAVIGATING_TO_WAYPOINT = auto()
-    SEARCHING_FOR_TARGET = auto()
-    TRACKING_TARGET = auto()
-    MISSION_COMPLETE = auto()
 
 # Definition of the MissionController class, which orchestrates the main loop of the tracking system,
 class MissionController:
     # Initializes the MissionController with the given configuration, camera source, flight controller,
     # video streamer, tracker, target selector, distance estimator, detector, command receiver, and optional waypoint manager
     def __init__(self, config, camera, flight, streamer, tracker, target_selector,
-                 distance_estimator, detector, command_receiver: CommandReceiver,
-                 waypoint_manager=None):
+                 distance_estimator, detector, command_receiver: CommandReceiver):
         self.config = config
         self.camera = camera
         self.flight = flight
@@ -62,7 +53,7 @@ class MissionController:
         self.distance_estimator = distance_estimator
         self.detector = detector
         self.command_receiver = command_receiver
-        self.waypoint_manager = waypoint_manager
+
 
         c = config.control
         self._k_p_yaw = c.k_p_yaw
@@ -80,14 +71,6 @@ class MissionController:
 
         self._reset_tracking_memory()
 
-        if self.waypoint_manager is not None:
-            self._state = (
-                MissionState.MISSION_COMPLETE if self.waypoint_manager.is_finished
-                else MissionState.NAVIGATING_TO_WAYPOINT
-            )
-            self._tracking_started_at = None
-        else:
-            self._state = None  # legacy single-target mode, no state machine
 
     # Resets the tracking memory, including the locked target ID, timeout frames, previous errors, and previous time
     def _reset_tracking_memory(self) -> None:
@@ -168,87 +151,11 @@ class MissionController:
                 self.distance_estimator.abort_recording()
                 self._calibration_warning_until = time.time() + 5.0
 
-            if self.waypoint_manager is not None:
-                self._process_mission_frame(frame)
-            else:
-                self._process_frame(frame)
+            self._process_frame(frame)
 
         self.camera.release()
         cv2.destroyAllWindows()
 
-    # Processes a single frame according to the current mission state, handling navigation, searching, and tracking as appropriate
-    def _process_mission_frame(self, frame) -> None:
-        if self._state == MissionState.MISSION_COMPLETE:
-            self.flight.send_stop()
-            self._stream(frame)
-            return
-
-        if self._state == MissionState.NAVIGATING_TO_WAYPOINT:
-            self._navigate_to_waypoint(frame)
-            return
-
-        # If we're in SEARCHING_FOR_TARGET or TRACKING_TARGET, we process the frame for tracking
-        self._process_frame(frame)
-
-        if self._state == MissionState.SEARCHING_FOR_TARGET and self._locked_id is not None:
-            self._state = MissionState.TRACKING_TARGET
-            self._tracking_started_at = time.time()
-            print("State -> TRACKING_TARGET")
-
-        elif self._state == MissionState.TRACKING_TARGET:
-            lost = self._locked_id is None
-            timed_out = (time.time() - self._tracking_started_at) > self.config.waypoints.max_tracking_duration_s
-
-            if lost or timed_out:
-                reason = "target lost" if lost else "max tracking duration reached"
-                print(f"Finished engaging target ({reason}). Advancing to next waypoint.")
-                self._reset_tracking_memory()
-                self.waypoint_manager.advance()
-
-                if self.waypoint_manager.is_finished:
-                    self._state = MissionState.MISSION_COMPLETE
-                    print("State -> MISSION_COMPLETE (no more waypoints)")
-                else:
-                    self._state = MissionState.NAVIGATING_TO_WAYPOINT
-                    wp = self.waypoint_manager.current
-                    print(f"State -> NAVIGATING_TO_WAYPOINT ({wp.label or wp})")
-    
-    # Navigates to the current waypoint, sending velocity commands to the flight controller based on the drone's position and orientation, and streams the video frame
-    def _navigate_to_waypoint(self, frame) -> None:
-        position = self.flight.poll_global_position()
-
-        if position is None:
-            # No GPS fix yet — hover and wait rather than fly blind.
-            self.flight.send_stop()
-            self._stream(frame)
-            return
-
-        if self.waypoint_manager.has_reached_current(position.lat, position.lon):
-            wp = self.waypoint_manager.current
-            print(f"Reached waypoint {self.waypoint_manager.index} ({wp.label or wp}). Searching for target.")
-            self._state = MissionState.SEARCHING_FOR_TARGET
-            self.flight.send_stop()
-            self._stream(frame)
-            return
-
-        bearing = self.waypoint_manager.bearing_to_current(position.lat, position.lon)
-        current_yaw = self.flight.poll_attitude().yaw
-        yaw_error = self._normalize_angle(bearing - current_yaw)
-
-        yaw_rate = self.config.waypoints.transit_yaw_kp * yaw_error
-        forward_velocity = self.config.waypoints.transit_forward_velocity
-
-        # If the yaw error is too large, we don't move forward to avoid flying off course.
-        if abs(yaw_error) > math.radians(45):
-            forward_velocity = 0.0
-
-        self.flight.send_velocity(forward_velocity, 0.0, 0.0, yaw_rate)
-        self._stream(frame)
-
-    @staticmethod
-    def _normalize_angle(angle_rad: float) -> float:
-        """Wraps to (-pi, pi] so yaw error always represents the shortest turn direction."""
-        return (angle_rad + math.pi) % (2 * math.pi) - math.pi
 
     # Streams the given frame to the video streamer after resizing it to the configured stream dimensions and applying JPEG compression
     def _stream(self, frame) -> None:

@@ -145,31 +145,6 @@ class DistanceEstimator:
         self._recorded_areas = []
         return True
 
-    # ── Static fitting methods ──────────────────────────────────────────────
-
-    # Performs a least-squares fit of the calibration data to determine the optical constant and RMS error, returning them as a tuple
-    @staticmethod
-    def fit(samples: List[Tuple[float, float]]) -> Tuple[float, float]:
-        if len(samples) < 2:
-            raise ValueError("Need at least 2 samples to fit a calibration.")
-
-        xs = [1.0 / (d ** 2) for d, _ in samples]
-        ys = [a for _, a in samples]
-
-        numerator = sum(x * y for x, y in zip(xs, ys))
-        denominator = sum(x * x for x in xs)
-        if denominator == 0:
-            raise ValueError("Cannot fit calibration: all distance samples are degenerate (distance=0?).")
-
-        k = numerator / denominator
-
-        squared_errors = []
-        for d, a in samples:
-            predicted_d = math.sqrt(k / a) if a > 0 else 0.0
-            squared_errors.append((predicted_d - d) ** 2)
-        rms_error_m = math.sqrt(sum(squared_errors) / len(squared_errors))
-
-        return k, rms_error_m
 
     # Computes the optical constant from per-frame samples collected at a single known distance
     @staticmethod

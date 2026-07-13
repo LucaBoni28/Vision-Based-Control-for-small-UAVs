@@ -117,22 +117,6 @@ class CommandLinkConfig:
     port: int
 
 
-@dataclass
-class Waypoint:
-    lat: float
-    lon: float
-    label: str = ""
-
-
-@dataclass
-class WaypointsConfig:
-    loop_mission: bool
-    reach_threshold_m: float
-    transit_forward_velocity: float
-    transit_yaw_kp: float
-    max_tracking_duration_s: float
-    points: List[Waypoint]
-
 # Defines the AppConfig class, which loads and validates the configuration from a YAML file
 @dataclass
 class AppConfig:
@@ -147,8 +131,6 @@ class AppConfig:
     display: DisplayConfig
     target_selection: TargetSelectionConfig
     command_link: CommandLinkConfig
-    waypoints: WaypointsConfig
-
     # Loads the configuration from a YAML file at the given path and returns an AppConfig instance
     @staticmethod
     def load(path: str | Path = "config.yaml") -> "AppConfig":
@@ -180,14 +162,6 @@ class AppConfig:
                 display=DisplayConfig(**raw["display"]),
                 target_selection=TargetSelectionConfig(**raw["target_selection"]),
                 command_link=CommandLinkConfig(**raw["command_link"]),
-                waypoints=WaypointsConfig(
-                    loop_mission=raw["waypoints"]["loop_mission"],
-                    reach_threshold_m=raw["waypoints"]["reach_threshold_m"],
-                    transit_forward_velocity=raw["waypoints"]["transit_forward_velocity"],
-                    transit_yaw_kp=raw["waypoints"]["transit_yaw_kp"],
-                    max_tracking_duration_s=raw["waypoints"]["max_tracking_duration_s"],
-                    points=[Waypoint(**p) for p in raw["waypoints"]["points"]],
-                ),
             )
         except KeyError as e:
             raise ValueError(f"config.yaml is missing required section/key: {e}") from e
@@ -232,12 +206,6 @@ class AppConfig:
             )
         if not (0 < self.command_link.port < 65536):
             errors.append(f"command_link.port out of range: {self.command_link.port}")
-        if self.waypoints.reach_threshold_m <= 0:
-            errors.append("waypoints.reach_threshold_m must be > 0")
-        if self.waypoints.transit_forward_velocity < 0:
-            errors.append("waypoints.transit_forward_velocity must be >= 0")
-        if self.waypoints.max_tracking_duration_s <= 0:
-            errors.append("waypoints.max_tracking_duration_s must be > 0")
 
         if errors:
             raise ValueError(

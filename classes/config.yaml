@@ -58,22 +58,4 @@ target_selection:
 command_link:
   jetson_host: 172.29.249.164
   port: 5006
-waypoints:
-  loop_mission: true
-  reach_threshold_m: 3.0
-  transit_forward_velocity: 2.0
-  transit_yaw_kp: 1.5
-  max_tracking_duration_s: 20.0
-  points:
-  - lat: 47.4721425
-    lon: 19.0602198
-    label: Waypoint 1
-  - lat: 47.4725015
-    lon: 19.0608072
-    label: Waypoint 2
-  - lat: 47.4723438
-    lon: 19.0611774
-    label: Waypoint 3
-  - lat: 47.4719957
-    lon: 19.0605953
-    label: Waypoint 4
+
