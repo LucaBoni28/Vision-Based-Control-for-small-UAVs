@@ -8,6 +8,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
+import time
 from pymavlink import mavutil
 
 from classes.config import MavlinkConfig
@@ -64,9 +65,23 @@ class FlightController:
 
     # Polls for a new HEARTBEAT message from the flight controller, updating the stored heartbeat
     def poll_heartbeat(self) -> None:
+        if not self.master:
+            return
+            
         msg = self.master.recv_match(type="HEARTBEAT", blocking=False)
-        if msg:
+        # Ensure we only save the autopilot's heartbeat, not our own echoed back by MAVProxy
+        if msg and msg.get_srcComponent() == self.master.target_component:
             self._last_heartbeat = msg
+            
+        # Send our own companion computer heartbeat at 1Hz continuously
+        current_time = time.time()
+        if current_time - self._last_heartbeat_sent > 1.0:
+            self.master.mav.heartbeat_send(
+                mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                0, 0, 0
+            )
+            self._last_heartbeat_sent = current_time
 
     # Returns True if the drone is currently armed, based on the latest heartbeat
     def is_armed(self) -> bool:
@@ -108,16 +123,6 @@ class FlightController:
     def send_velocity(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:
         import time
         current_time = time.time()
-        
-        if current_time - self._last_heartbeat_sent > 1.0:
-            if self.master:
-                # Send heartbeat so Mission Planner registers this companion computer
-                self.master.mav.heartbeat_send(
-                    mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
-                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                    0, 0, 0
-                )
-            self._last_heartbeat_sent = current_time
 
         if current_time - self._last_vel_log > 1.0:
             log_msg = f"Vel: Vx:{vx:.1f} Vy:{vy:.1f} Vz:{vz:.1f} Y:{yaw_rate:.1f}"
