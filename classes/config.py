@@ -116,6 +116,9 @@ class CommandLinkConfig:
     jetson_host: str
     port: int
 
+@dataclass
+class PitchCompensationConfig:
+    mode: str
 
 # Defines the AppConfig class, which loads and validates the configuration from a YAML file
 @dataclass
@@ -131,6 +134,7 @@ class AppConfig:
     display: DisplayConfig
     target_selection: TargetSelectionConfig
     command_link: CommandLinkConfig
+    pitch_compensation: PitchCompensationConfig
     # Loads the configuration from a YAML file at the given path and returns an AppConfig instance
     @staticmethod
     def load(path: str | Path = "config.yaml") -> "AppConfig":
@@ -162,6 +166,7 @@ class AppConfig:
                 display=DisplayConfig(**raw["display"]),
                 target_selection=TargetSelectionConfig(**raw["target_selection"]),
                 command_link=CommandLinkConfig(**raw["command_link"]),
+                pitch_compensation=PitchCompensationConfig(**raw.get("pitch_compensation", {"mode": "software"})),
             )
         except KeyError as e:
             raise ValueError(f"config.yaml is missing required section/key: {e}") from e
@@ -206,6 +211,9 @@ class AppConfig:
             )
         if not (0 < self.command_link.port < 65536):
             errors.append(f"command_link.port out of range: {self.command_link.port}")
+        valid_modes = ("software", "gimbal_auto", "gimbal_manual", "none")
+        if self.pitch_compensation.mode not in valid_modes:
+            errors.append(f"pitch_compensation.mode must be one of {valid_modes}, got '{self.pitch_compensation.mode}'")
 
         if errors:
             raise ValueError(

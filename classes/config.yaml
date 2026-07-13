@@ -58,4 +58,5 @@ target_selection:
 command_link:
   jetson_host: 172.29.249.164
   port: 5006
-
+pitch_compensation:
+  mode: software  # 'software', 'gimbal_auto', 'gimbal_manual', or 'none'

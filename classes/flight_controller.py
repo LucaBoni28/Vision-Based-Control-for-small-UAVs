@@ -140,3 +140,20 @@ class FlightController:
     # Sends a stop command to the flight controller, setting all velocities and yaw rate to zero
     def send_stop(self) -> None:
         self.send_velocity(0.0, 0.0, 0.0, 0.0)
+
+    # Sends a pitch command to the camera gimbal.
+    def send_gimbal_pitch(self, pitch_deg: float) -> None:
+        if self.master:
+            self.master.mav.command_long_send(
+                self.target_system,
+                self.target_component,
+                mavutil.mavlink.MAV_CMD_DO_MOUNT_CONTROL,
+                1, # confirmation
+                pitch_deg, # param 1 (pitch, centidegrees or degrees depending on mount, but DO_MOUNT_CONTROL typically uses degrees)
+                0, # roll
+                0, # yaw
+                0, # altitude
+                0, # latitude
+                0, # longitude
+                mavutil.mavlink.MAV_MOUNT_MODE_MAVLINK_TARGETING # mount_mode
+            )

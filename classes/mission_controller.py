@@ -211,7 +211,15 @@ class MissionController:
                     # Error normalization in range [-1,1]
                     e_x = error_x / center_x
                     e_y = error_y / center_y
-                    e_y_compensated = e_y - math.tan(current_pitch_rad)
+                    
+                    pitch_comp_mode = self.config.pitch_compensation.mode
+                    if pitch_comp_mode == "software":
+                        e_y_compensated = e_y - math.tan(current_pitch_rad)
+                    elif pitch_comp_mode == "gimbal_auto":
+                        e_y_compensated = e_y
+                        self.flight.send_gimbal_pitch(-math.degrees(current_pitch_rad))
+                    else:
+                        e_y_compensated = e_y
 
                     e_mag = math.sqrt(e_x**2 + e_y_compensated**2)
                     e_mag = min(1.0, e_mag)
