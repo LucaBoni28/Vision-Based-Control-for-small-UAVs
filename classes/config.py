@@ -35,6 +35,7 @@ class CameraConfig:
 @dataclass
 class MavlinkConfig:
     connection: str
+    telemetry_output: str
     source_system: int
     source_component: int
     attitude_stream_rate_hz: int
