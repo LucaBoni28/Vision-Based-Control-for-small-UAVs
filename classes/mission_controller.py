@@ -81,6 +81,7 @@ class MissionController:
         self._prev_error_x = 0.0
         self._prev_error_area = 0.0
         self._prev_time = time.time()
+        self._last_print_time = 0.0
 
     # Dispatches commands received from the Ground Station via the CommandReceiver.
     # Forwards click commands to ManualClickSelector, handles calibration start/stop.
@@ -206,7 +207,11 @@ class MissionController:
                     error_x = bb_center_x - center_x
                     error_y = bb_center_y - center_y
 
-                    print(f"ID: {track_id} | Err X: {error_x:6.2f} | Err Y: {error_y:6.2f}")
+                    current_time = time.time()
+                    should_print = (current_time - self._last_print_time) > 0.5
+
+                    if should_print:
+                        print(f"ID: {track_id} | Err X: {error_x:6.2f} | Err Y: {error_y:6.2f}")
 
                     # Error normalization in range [-1,1]
                     e_x = error_x / center_x
@@ -269,8 +274,10 @@ class MissionController:
                     else:
                         v_x = max(v_x_request, -v_x_limit)
 
-                    print(f"Pitch: {current_pitch_rad*180/3.14:.2f} deg | Vx: {v_x:.2f} m/s | "
-                          f"Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
+                    if should_print:
+                        print(f"Pitch: {current_pitch_rad*180/3.14:.2f} deg | Vx: {v_x:.2f} m/s | "
+                              f"Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
+                        self._last_print_time = current_time
 
                     # Distance estimate in meters (from BB area calibration)
                     distance_estimate = self.distance_estimator.distance_to(current_area)
@@ -349,7 +356,4 @@ class MissionController:
                 print("TARGET PURGED FROM MEMORY. SEARCHING FOR NEW TARGET...")
                 self._locked_id = None
 
-        stream_frame = cv2.resize(
-            frame, (self.config.display.stream_width, self.config.display.stream_height)
-        )
-        self.streamer.send_frame(stream_frame, self.config.display.jpeg_quality)
+        self._stream(frame)

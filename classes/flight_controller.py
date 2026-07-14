@@ -114,9 +114,11 @@ class FlightController:
             self._last_vel_log = current_time
 
         if self.master:
-            # Temporarily masquerade as the Autopilot component so MAVProxy/Mission Planner doesn't filter it out
+            # Temporarily masquerade as the Autopilot so MAVProxy/Mission Planner doesn't filter it out
+            original_sys = self.master.mav.srcSystem
             original_comp = self.master.mav.srcComponent
-            self.master.mav.srcComponent = 1
+            self.master.mav.srcSystem = self.target_system
+            self.master.mav.srcComponent = self.target_component
             
             time_boot_ms = int(current_time * 1000) % 4294967295
             self.master.mav.named_value_float_send(time_boot_ms, b'CmdVx', vx)
@@ -124,7 +126,8 @@ class FlightController:
             self.master.mav.named_value_float_send(time_boot_ms, b'CmdVz', vz)
             self.master.mav.named_value_float_send(time_boot_ms, b'CmdYawR', yaw_rate)
             
-            # Restore original component ID
+            # Restore original system and component ID
+            self.master.mav.srcSystem = original_sys
             self.master.mav.srcComponent = original_comp
 
         self.master.mav.set_position_target_local_ned_send(
@@ -149,7 +152,7 @@ class FlightController:
                 self.target_component,
                 mavutil.mavlink.MAV_CMD_DO_MOUNT_CONTROL,
                 1, # confirmation
-                pitch_deg, # param 1 (pitch, centidegrees or degrees depending on mount, but DO_MOUNT_CONTROL typically uses degrees)
+                pitch_deg * 100.0, # param 1 (pitch in centidegrees)
                 0, # roll
                 0, # yaw
                 0, # altitude

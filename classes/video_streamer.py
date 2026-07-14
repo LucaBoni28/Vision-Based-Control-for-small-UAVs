@@ -10,6 +10,9 @@ import struct
 
 import cv2
 import numpy as np
+import threading
+import queue
+import time
 
 from classes.config import VideoLinkConfig
 
@@ -22,18 +25,70 @@ class VideoStreamer:
     def __init__(self, video_link_config: VideoLinkConfig):
         self._config = video_link_config
         self._socket = None
+        self._frame_queue = queue.Queue(maxsize=2)
+        self._stop_event = threading.Event()
+        self._thread = None
 
-    # Connects to the ground station using the configured host and port
+    # Connects to the ground station using the configured host and port and starts the background thread
     def connect(self) -> None:
-        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.connect((self._config.host, self._config.port))
+        try:
+            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._socket.connect((self._config.host, self._config.port))
+            print(f"Connected video stream to {self._config.host}:{self._config.port}")
+        except Exception as e:
+            print(f"Warning: Could not connect video stream: {e}")
+            self._socket = None
 
-    # Sends a single video frame to the ground station, encoded as JPEG with the specified quality
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._stream_worker, daemon=True)
+        self._thread.start()
+
+    def disconnect(self) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        if self._socket is not None:
+            try:
+                self._socket.close()
+            except:
+                pass
+            self._socket = None
+
+    # Queues a single video frame to be sent to the ground station in the background thread
     def send_frame(self, frame, jpeg_quality: int) -> None:
-        ret, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
-        frame_data = buffer.tobytes()
-        message = struct.pack(">L", len(frame_data)) + frame_data
-        self._socket.sendall(message)
+        if self._socket is None:
+            return
+            
+        # Drop the oldest frame if the queue is full to prevent latency buildup
+        if self._frame_queue.full():
+            try:
+                self._frame_queue.get_nowait()
+            except queue.Empty:
+                pass
+                
+        self._frame_queue.put((frame, jpeg_quality))
+
+    # Background worker that encodes and streams the frames over TCP
+    def _stream_worker(self) -> None:
+        while not self._stop_event.is_set():
+            if self._socket is None:
+                time.sleep(0.1)
+                continue
+                
+            try:
+                frame, jpeg_quality = self._frame_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+                
+            try:
+                ret, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+                frame_data = buffer.tobytes()
+                message = struct.pack(">L", len(frame_data)) + frame_data
+                self._socket.sendall(message)
+            except (socket.error, ConnectionError) as e:
+                print(f"\nVideo stream connection lost: {e}")
+                self._socket.close()
+                self._socket = None
 
 
 # Ground-station-side TCP server: listens for the Jetson to connect, then yields decoded frames one at a time via read_frame()
