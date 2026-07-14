@@ -48,10 +48,11 @@ This journal is used to track daily progress, challenges, and solutions to help 
 
 ### 🎯 Weekly Goals
 - [x] **Headless Jetson Logging**: Forward console logs/outputs from the Jetson to the Ground Station software since the Jetson will run headless in the real application.
-- [ ] **Camera Pitch Control (Servo)**: Implement two modes for camera pitch:
+- [x] **Camera Pitch Control (Servo)**: Implement two modes for camera pitch:
   - *Manual*: Controlled via a potentiometer on the RC controller.
   - *Automatic*: System autonomously reads the current pitch and sends a correction signal through the flight controller to a self-leveling servo motor.
 - [ ] **Simulation & Ground Station**: Connect a ground station software (Mission Planner) and set up a smooth, fluent 3D drone simulation in Gazebo. Optimize the Gazebo setup to run better on the struggling PC.
+- [ ] **Network Stability**: Set up Tailscale to establish a fixed, static IP address connection between the Ground Station and the Jetson, avoiding the need to dynamically change IP addresses in the configuration files whenever the local network changes.
 
 ### 📝 Daily Log
 
@@ -60,8 +61,17 @@ This journal is used to track daily progress, challenges, and solutions to help 
 - Resolved serial port access conflicts by routing MAVLink telemetry through MAVProxy on the Jetson. The Python control script now connects to a local UDP stream (`udpin:0.0.0.0:14551`) instead of locking `/dev/ttyACM0`, allowing Mission Planner and the vision-control script to run simultaneously.
 
 #### Tuesday
-- 
-
+- **Video Stream Stability**: 
+  - **The Issue**: The entire main vision-control loop was crashing or stalling when the Ground Station disconnected unexpectedly or network latency spiked.
+  - **The Cause**: Video frames were being encoded and transmitted synchronously on the main thread. If the network socket blocked (e.g., waiting for an acknowledgment or hitting a broken pipe like `WinError 10053`), the flight control loop was completely halted, preventing the drone from updating its velocities.
+  - **The Solution**: Refactored the video streaming logic to use an asynchronous background thread with a bounded queue. This completely decouples the network transmission from the flight loop, ensuring the drone's control logic always runs at its target frequency without waiting on the network.
+- **Camera Pitch Control (Servo)**: Completed the software implementation of the automatic camera pitch compensation. Fixed a bug where the `MAV_CMD_DO_MOUNT_CONTROL` pitch parameter was sent in degrees instead of the centidegrees required by the ArduPilot MAVLink specification. *(Note: Still needs physical testing and validation, as the physical hardware is currently unavailable).*
+- **MAVLink Telemetry Routing & Mission Planner Integration**:
+  - **The Problem**: Discovered a critical behavior in MAVProxy's loop-prevention routing. When attempting to send custom `NAMED_VALUE_FLOAT` telemetry (for graphing commanded velocities like `CmdVx` against actual velocity in Mission Planner), MAVProxy was silently dropping the packets.
+  - **The Cause**: MAVProxy automatically blocks packets that originate from a Ground Station/UDP port but claim to be from the drone (System ID 1), as it considers them invalid loopback packets.
+  - **The Solution**: Bypassed MAVProxy's filtering entirely by establishing a dedicated secondary MAVLink connection (`self.telemetry_output`) specifically for telemetry output.
+  - **Result**: The primary MAVLink connection remains dedicated to flight control (reading attitude, sending velocity targets), while the new secondary connection cleanly transmits the `NAMED_VALUE_FLOAT` custom data directly to Mission Planner for live tuning.
+- **Firewall Configuration**: Created a permanent PowerShell script (`setup_firewall.ps1`) to automatically configure Windows Defender Firewall rules for the UAV application. This permanently opens the required UDP and TCP ports (UDP 14550, 14551, 14560 for MAVLink; TCP/UDP 5005, 5006 for video and command streams), eliminating the need to completely disable the Windows Firewall during field testing and improving overall system security.
 #### Wednesday
 - 
 
