@@ -37,6 +37,7 @@ class FlightController:
         print("Connecting to Flight Controller...")
         self.master = mavutil.mavlink_connection(
             self._config.connection,
+            baud=self._config.baud,
             source_system=self._config.source_system,
             source_component=self._config.source_component,
         )

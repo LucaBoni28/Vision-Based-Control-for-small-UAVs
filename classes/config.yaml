@@ -4,8 +4,9 @@ camera:
   height: 960
   framerate: 30
 mavlink:
-  # connection: /dev/ttyACM0       # Physical Pixhawk via USB serial
-  connection: udpin:0.0.0.0:14551  # MAVProxy UDP stream
+  connection: /dev/ttyUSB0         # Physical Pixhawk via TELEM1
+  baud: 921600                     # Baud rate for serial connections
+  # connection: udpin:0.0.0.0:14551  # MAVProxy UDP stream
   telemetry_output: udpout:100.112.124.116:14560
   source_system: 2
   source_component: 191
