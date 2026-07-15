@@ -75,6 +75,18 @@ class FlightController:
             1,
         )
 
+        if self.telemetry_output:
+            try:
+                # Also request position from the simulation
+                self.telemetry_output.mav.request_data_stream_send(
+                    1, 1, # Default SITL target system/component
+                    mavutil.mavlink.MAV_DATA_STREAM_POSITION,
+                    self._config.attitude_stream_rate_hz,
+                    1,
+                )
+            except Exception:
+                pass
+
     # Polls for a new HEARTBEAT message from the flight controller, updating the stored heartbeat
     def poll_heartbeat(self) -> None:
         if not self.master:
@@ -126,9 +138,25 @@ class FlightController:
 
     # Polls for a new GLOBAL_POSITION_INT message and returns relative altitude in meters (above home). Returns None if no data received yet.
     def poll_relative_alt(self) -> float:
+        # Check simulation (telemetry_output) first so we can fool the system
+        if self.telemetry_output:
+            msg_sim = self.telemetry_output.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
+            if msg_sim:
+                self._relative_alt_m = msg_sim.relative_alt / 1000.0  # mm → m
+
+        # Check physical drone (master) - this will overwrite simulation if both send it, 
+        # but if we're only flying in SITL, the physical drone is sitting on the ground (alt=0)
+        # so we'll just prioritize SITL if we get a reading from it.
         msg = self.master.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
         if msg:
-            self._relative_alt_m = msg.relative_alt / 1000.0  # mm → m
+            # If physical drone altitude is basically 0, and we already have a SITL altitude, prefer SITL
+            physical_alt = msg.relative_alt / 1000.0
+            if self._relative_alt_m is None or (abs(physical_alt) < 0.1 and self._relative_alt_m > 0.5):
+                 # Keep SITL altitude
+                 pass
+            else:
+                 self._relative_alt_m = physical_alt
+
         return self._relative_alt_m
 
 
