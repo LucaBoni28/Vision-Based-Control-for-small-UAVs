@@ -31,6 +31,7 @@ class FlightController:
         self._last_heartbeat = None
         self._last_vel_log = 0.0
         self._last_heartbeat_sent = 0.0
+        self._relative_alt_m = None  # Relative altitude above home (meters)
 
     # Connects to the flight controller via MAVLink, waits for a heartbeat, and requests attitude data at the specified stream rate
     def connect(self) -> None:
@@ -61,6 +62,15 @@ class FlightController:
             self.master.target_system,
             self.master.target_component,
             mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
+            self._config.attitude_stream_rate_hz,
+            1,
+        )
+
+        # Request position stream for altitude data (GLOBAL_POSITION_INT)
+        self.master.mav.request_data_stream_send(
+            self.master.target_system,
+            self.master.target_component,
+            mavutil.mavlink.MAV_DATA_STREAM_POSITION,
             self._config.attitude_stream_rate_hz,
             1,
         )
@@ -113,6 +123,13 @@ class FlightController:
 
     def poll_pitch(self) -> float:
         return self.poll_attitude().pitch
+
+    # Polls for a new GLOBAL_POSITION_INT message and returns relative altitude in meters (above home). Returns None if no data received yet.
+    def poll_relative_alt(self) -> float:
+        msg = self.master.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
+        if msg:
+            self._relative_alt_m = msg.relative_alt / 1000.0  # mm → m
+        return self._relative_alt_m
 
 
     # Sends a velocity command to the flight controller in the body frame, with the specified velocities in m/s and yaw rate in rad/s

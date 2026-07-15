@@ -166,14 +166,17 @@ class MissionController:
                     self.flight.send_land()
                     self._stream_land_command_sent = True
 
-                    # Wait for drone to land (disarm), then exit the script cleanly
-                    print("Waiting for drone to land and disarm before exiting...")
+                    # Wait for drone to reach ground, then exit the script cleanly
+                    print("Waiting for drone to land before exiting...")
                     while True:
                         self.flight.poll_heartbeat()
-                        if not self.flight.is_armed():
-                            print("Drone disarmed (landed). Shutting down.")
+                        alt = self.flight.poll_relative_alt()
+                        if alt is not None and alt < 0.5:
+                            print(f"Drone on ground (alt={alt:.1f}m). Shutting down.")
                             break
-                        time.sleep(0.5)
+                        if alt is not None:
+                            print(f"  Landing... altitude: {alt:.1f}m")
+                        time.sleep(1.0)
                     break  # Exit the main while loop → triggers cleanup below
 
                 elif not self._stream_land_command_sent:
