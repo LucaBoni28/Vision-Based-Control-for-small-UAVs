@@ -147,8 +147,17 @@ class FlightController:
 
         # Check simulation (telemetry_output)
         if self.telemetry_output:
-            msg_sim = self.telemetry_output.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
+            msg_sim = None
+            # Drain the buffer and grab the latest GLOBAL_POSITION_INT
+            while True:
+                m = self.telemetry_output.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
+                if not m:
+                    break
+                msg_sim = m
+                
             if msg_sim:
+                if not getattr(self, '_sitl_alt_active', False):
+                    print(f"SITL ALTITUDE DETECTED! Overriding physical drone (SITL Alt: {msg_sim.relative_alt / 1000.0}m)")
                 self._sitl_alt_active = True  # Permanently prioritize SITL for this session
                 self._relative_alt_m = msg_sim.relative_alt / 1000.0  # mm → m
 
