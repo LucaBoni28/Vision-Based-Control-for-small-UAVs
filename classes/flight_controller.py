@@ -143,6 +143,21 @@ class FlightController:
             0, yaw_rate,
         )
 
+        # Mirror the velocity command to telemetry_output (used by SITL simulation)
+        if self.telemetry_output:
+            try:
+                self.telemetry_output.mav.set_position_target_local_ned_send(
+                    0, self.target_system, self.target_component,
+                    mavutil.mavlink.MAV_FRAME_BODY_NED,
+                    0b0000011111000111,
+                    0, 0, 0,
+                    vx, vy, vz,
+                    0, 0, 0,
+                    0, yaw_rate,
+                )
+            except Exception:
+                pass  # Don't crash if telemetry link is down
+
     # Sends a stop command to the flight controller, setting all velocities and yaw rate to zero
     def send_stop(self) -> None:
         self.send_velocity(0.0, 0.0, 0.0, 0.0)
@@ -158,6 +173,19 @@ class FlightController:
                 0, 0, 0, 0, 0, 0, 0
             )
             print("SENT LAND COMMAND FOR SAFETY!")
+
+        # Mirror the land command to telemetry_output (used by SITL simulation)
+        if self.telemetry_output:
+            try:
+                self.telemetry_output.mav.command_long_send(
+                    self.target_system,
+                    self.target_component,
+                    mavutil.mavlink.MAV_CMD_NAV_LAND,
+                    1, # confirmation
+                    0, 0, 0, 0, 0, 0, 0
+                )
+            except Exception:
+                pass  # Don't crash if telemetry link is down
 
     # Sends a pitch command to the camera gimbal.
     def send_gimbal_pitch(self, pitch_deg: float) -> None:
