@@ -155,25 +155,34 @@ class MissionController:
             if not self.streamer.is_connected:
                 current_time = time.time()
                 if self._stream_lost_time is None:
-                    print(f"VIDEO STREAM LOST! Hovering for {self._hover_timeout} seconds before landing...")
+                    print(f"VIDEO STREAM LOST! Hovering for {self._hover_timeout:.0f} seconds before landing...")
                     self._stream_lost_time = current_time
                     self._stream_land_command_sent = False
                     self.flight.send_stop()
 
                 elapsed = current_time - self._stream_lost_time
                 if elapsed > self._hover_timeout and not self._stream_land_command_sent:
-                    print(f"VIDEO STREAM STILL LOST AFTER {self._hover_timeout} SECONDS! Initiating landing...")
+                    print(f"VIDEO STREAM STILL LOST AFTER {self._hover_timeout:.0f} SECONDS! Initiating landing...")
                     self.flight.send_land()
                     self._stream_land_command_sent = True
+
+                    # Wait for drone to land (disarm), then exit the script cleanly
+                    print("Waiting for drone to land and disarm before exiting...")
+                    while True:
+                        self.flight.poll_heartbeat()
+                        if not self.flight.is_armed():
+                            print("Drone disarmed (landed). Shutting down.")
+                            break
+                        time.sleep(0.5)
+                    break  # Exit the main while loop → triggers cleanup below
+
                 elif not self._stream_land_command_sent:
-                    # Still hovering, ensure it stops
+                    # Still in the hover window: try to reconnect and keep the drone stopped
                     self.flight.send_stop()
-                
-                # Attempt to reconnect
-                self.streamer.connect()
-                
-                # Skip the rest of frame processing and tracking to prevent blind flight
-                time.sleep(0.1) # Small delay to prevent tight loop burning CPU
+                    self.streamer.connect()
+
+                # Skip frame processing to prevent blind flight
+                time.sleep(0.1)
                 continue
             else:
                 if self._stream_lost_time is not None:

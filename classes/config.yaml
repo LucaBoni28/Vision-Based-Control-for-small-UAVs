@@ -4,9 +4,9 @@ camera:
   height: 960
   framerate: 30
 mavlink:
-  connection: udpin:0.0.0.0:14551  # MAVProxy UDP stream (MAVProxy owns the serial port)
+  connection: udpin:0.0.0.0:14551 # MAVProxy UDP stream (MAVProxy owns the serial port)
   # connection: /dev/ttyUSB0       # Direct serial (only use this if NOT running MAVProxy)
-  baud: 921600                     # Baud rate (only used for direct serial connections)
+  baud: 921600 # Baud rate (only used for direct serial connections)
   telemetry_output: udpout:100.112.124.116:14560
   source_system: 2
   source_component: 191
@@ -19,11 +19,11 @@ model:
   task: detect
 detection:
   classes:
-  - 62
+    - 62
   confidence: 0.65
 tracker:
-  backend: bytetrack
-  config_file: bytetrack.yaml
+  backend: deepsort
+  config_file: bytetrack.yaml # ignore when backend is deepsort
   max_timeout_frames: 50
   deepsort:
     max_age: 50
@@ -61,4 +61,4 @@ command_link:
   jetson_host: 100.109.108.81
   port: 5006
 pitch_compensation:
-  mode: software  # 'software', 'gimbal_auto', 'gimbal_manual', or 'none'
+  mode: software # 'software', 'gimbal_auto', 'gimbal_manual', or 'none'
