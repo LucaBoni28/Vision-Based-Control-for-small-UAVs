@@ -29,19 +29,28 @@ class VideoStreamer:
         self._stop_event = threading.Event()
         self._thread = None
 
+    @property
+    def is_connected(self) -> bool:
+        return self._socket is not None
+
     # Connects to the ground station using the configured host and port and starts the background thread
     def connect(self) -> None:
         try:
             self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._socket.settimeout(0.5)  # Add timeout to avoid blocking main loop
             self._socket.connect((self._config.host, self._config.port))
+            self._socket.settimeout(None) # Reset timeout for normal operation
             print(f"Connected video stream to {self._config.host}:{self._config.port}")
         except Exception as e:
             print(f"Warning: Could not connect video stream: {e}")
+            if self._socket:
+                self._socket.close()
             self._socket = None
 
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._stream_worker, daemon=True)
-        self._thread.start()
+        if self._thread is None or not self._thread.is_alive():
+            self._stop_event.clear()
+            self._thread = threading.Thread(target=self._stream_worker, daemon=True)
+            self._thread.start()
 
     def disconnect(self) -> None:
         self._stop_event.set()

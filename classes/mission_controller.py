@@ -69,6 +69,10 @@ class MissionController:
         self._max_timeout = config.tracker.max_timeout_frames
         self._prev_time_fps = 0.0
         self._calibration_warning_until = 0.0
+        
+        self._stream_lost_time = None
+        self._stream_land_command_sent = False
+        self._hover_timeout = 5.0  # seconds to hover before landing on stream loss
 
         self._reset_tracking_memory()
 
@@ -146,6 +150,36 @@ class MissionController:
 
             # Poll heartbeat to keep armed state up to date
             self.flight.poll_heartbeat()
+
+            # Handle video stream disconnection safety
+            if not self.streamer.is_connected:
+                current_time = time.time()
+                if self._stream_lost_time is None:
+                    print(f"VIDEO STREAM LOST! Hovering for {self._hover_timeout} seconds before landing...")
+                    self._stream_lost_time = current_time
+                    self._stream_land_command_sent = False
+                    self.flight.send_stop()
+
+                elapsed = current_time - self._stream_lost_time
+                if elapsed > self._hover_timeout and not self._stream_land_command_sent:
+                    print(f"VIDEO STREAM STILL LOST AFTER {self._hover_timeout} SECONDS! Initiating landing...")
+                    self.flight.send_land()
+                    self._stream_land_command_sent = True
+                elif not self._stream_land_command_sent:
+                    # Still hovering, ensure it stops
+                    self.flight.send_stop()
+                
+                # Attempt to reconnect
+                self.streamer.connect()
+                
+                # Skip the rest of frame processing and tracking to prevent blind flight
+                time.sleep(0.1) # Small delay to prevent tight loop burning CPU
+                continue
+            else:
+                if self._stream_lost_time is not None:
+                    print("VIDEO STREAM RECOVERED! Resuming mission...")
+                    self._stream_lost_time = None
+                    self._stream_land_command_sent = False
 
             # Safety check: abort recording immediately if drone is armed
             if self.distance_estimator.is_recording and self.flight.is_armed():

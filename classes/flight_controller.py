@@ -147,6 +147,18 @@ class FlightController:
     def send_stop(self) -> None:
         self.send_velocity(0.0, 0.0, 0.0, 0.0)
 
+    # Sends a land command to the flight controller for safety
+    def send_land(self) -> None:
+        if self.master:
+            self.master.mav.command_long_send(
+                self.target_system,
+                self.target_component,
+                mavutil.mavlink.MAV_CMD_NAV_LAND,
+                1, # confirmation
+                0, 0, 0, 0, 0, 0, 0
+            )
+            print("SENT LAND COMMAND FOR SAFETY!")
+
     # Sends a pitch command to the camera gimbal.
     def send_gimbal_pitch(self, pitch_deg: float) -> None:
         if self.master:
