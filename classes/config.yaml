@@ -44,6 +44,7 @@ control:
   area_deadzone: 0.05
   max_derivative_dt: 0.5
   k_d_vx: 0.9529780564263323
+  hover_timeout: 20.0
 calibration:
   file: calibration.json
   desired_stopping_distance_m: 0.6

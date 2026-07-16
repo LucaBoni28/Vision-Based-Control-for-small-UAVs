@@ -72,9 +72,19 @@ This journal is used to track daily progress, challenges, and solutions to help 
   - **The Solution**: Bypassed MAVProxy's filtering entirely by establishing a dedicated secondary MAVLink connection (`self.telemetry_output`) specifically for telemetry output.
   - **Result**: The primary MAVLink connection remains dedicated to flight control (reading attitude, sending velocity targets), while the new secondary connection cleanly transmits the `NAMED_VALUE_FLOAT` custom data directly to Mission Planner for live tuning.
 - **Firewall Configuration**: Created a permanent PowerShell script (`setup_firewall.ps1`) to automatically configure Windows Defender Firewall rules for the UAV application. This permanently opens the required UDP and TCP ports (UDP 14550, 14551, 14560 for MAVLink; TCP/UDP 5005, 5006 for video and command streams), eliminating the need to completely disable the Windows Firewall during field testing and improving overall system security.
-#### Wednesday
-- 
-
+#### Wednesday, July 15
+- **Video Stream Loss Safety Protocol & Landing Logic**: 
+  - **The Problem**: Previously, if the video stream dropped, the main control loop would block or continue flying blindly without operator feedback. 
+  - **The Solution**: Implemented a comprehensive fail-safe mechanism in `mission_controller.py`. The stream connection check (`streamer.is_connected`) is now evaluated in a non-blocking manner within the main 30Hz loop. 
+  - **Hover Timeout**: If the connection drops, the drone immediately halts its current trajectory by sending zero-velocity commands (`send_stop()`). It enters a 5-second grace period where it hovers in place while the `VideoStreamer` background thread attempts socket reconnections (with a `0.5s` socket timeout to prevent thread blocking).
+  - **Autonomous Landing**: If the connection is not restored within 5 seconds, the `MissionController` issues a `MAV_CMD_NAV_LAND` command (via `command_long_send` with confirmation) to the flight controller. 
+  - **Safe Shutdown Sequence**: Crucially, the script does not exit immediately after sending the land command, as this would terminate the control loop mid-air. Instead, it enters a while-loop that polls the drone's `GLOBAL_POSITION_INT` MAVLink message. It waits until the relative altitude (`msg.relative_alt / 1000.0`) drops below `0.5m`, confirming the drone has physically touched the ground, before performing a clean shutdown of all threads and exiting.
+- **SITL Simulation Overrides for Lab Testing**: 
+  - **The Problem**: Testing the new altitude-based landing protocol inside the lab is difficult because the physical Pixhawk (sitting on a desk) constantly reports a relative altitude of `0m`. When the land command is issued, the script immediately detects `alt < 0.5m` and exits, making it impossible to verify the descent logic. 
+  - **The Workaround**: Configured the script to interact simultaneously with the physical Pixhawk (`master` on UDP) and Mission Planner's SITL simulation (`telemetry_output` on TCP). 
+  - **Command Mirroring**: Modified `flight_controller.py` so that `send_velocity()` (sending `SET_POSITION_TARGET_LOCAL_NED`) and `send_land()` are mirrored to both the physical drone and the SITL connection. This allows the simulated drone in Mission Planner to physically move in response to the script's commands.
+  - **Altitude Hijacking**: Upgraded the `poll_relative_alt()` method to request the `MAV_DATA_STREAM_POSITION` stream from the SITL connection as well. It now aggressively drains the message buffer of the `telemetry_output` socket using `recv_match(type="GLOBAL_POSITION_INT", blocking=False)` in a `while True` loop to ensure we always have the freshest data without lag. If it successfully reads a simulated altitude, it sets a persistent flag (`_sitl_alt_active = True`). From that point forward, the script completely ignores the physical drone's `0m` altitude and bases all landing checks on the SITL's altitude. This allows the entire 5-second hover and descent sequence to be verified visually and safely in the Mission Planner simulator.
+  - **Recovery Validation**: Tested and verified that if the video stream drops but is manually restarted *before* the 5-second hover timeout expires, the system successfully aborts the landing sequence and seamlessly resumes normal flight tracking.
 #### Thursday
 - 
 
