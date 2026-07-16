@@ -72,7 +72,7 @@ class MissionController:
         
         self._stream_lost_time = None
         self._stream_land_command_sent = False
-        self._hover_timeout = 5.0  # seconds to hover before landing on stream loss
+        self._hover_timeout = config.control.hover_timeout  # seconds to hover before landing on stream loss
 
         self._reset_tracking_memory()
 

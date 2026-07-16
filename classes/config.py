@@ -90,6 +90,7 @@ class ControlConfig:
     vz_deadzone: float
     area_deadzone: float
     max_derivative_dt: float
+    hover_timeout: float
 
 
 @dataclass
