@@ -51,12 +51,21 @@ class FlightController:
         print(f"System ID: {self.master.target_system}")
         print(f"Component ID: {self.master.target_component}")
 
-        # Telemetry sending
-        self.telemetry_output = mavutil.mavlink_connection(
-            self._config.telemetry_output,
-            source_system=self._config.source_system,
-            source_component=self._config.source_component,
-        )
+        # Telemetry output to Ground Station (e.g. Mission Planner via Tailscale).
+        # Uses a different source_component (3) to avoid identity conflicts with the
+        # primary master connection (source_component=2) when MAVProxy is routing.
+        # Wrapped in try/except so the program does not hang if Mission Planner is not
+        # yet listening on the TCP port at startup time.
+        try:
+            self.telemetry_output = mavutil.mavlink_connection(
+                self._config.telemetry_output,
+                source_system=self._config.source_system,
+                source_component=self._config.source_component + 1,  # e.g. 3, distinct from master
+            )
+            print(f"Telemetry output connected to {self._config.telemetry_output}")
+        except Exception as e:
+            print(f"[WARNING] Telemetry output unavailable ({e}). Continuing without it.")
+            self.telemetry_output = None
 
         self.master.mav.request_data_stream_send(
             self.master.target_system,

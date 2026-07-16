@@ -39,7 +39,7 @@ class MavlinkConfig:
     source_system: int
     source_component: int
     attitude_stream_rate_hz: int
-    baud: int = 921600
+    baud: int
 
 
 @dataclass
