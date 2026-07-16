@@ -1,23 +1,70 @@
-# MSc Degree Thesis: Feasibility Investigation of Vision-Based Control Methods for Small-Scale Drones
+# Vision-Based Control for Small-Scale Drones
 
-This thesis investigates the feasibility of vision-based control methods for small-scale drones.
-The research initially focuses on laboratory experiments using relative visual positioning.
-The system will utilize an NVIDIA Jetson Orin NX computer and a Raspberry Pi Camera V2 to detect objects and determine their positions relative to the drone.
+![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)
+![Status](https://img.shields.io/badge/status-active-success.svg)
 
-In the final system configuration, the NVIDIA Jetson Orin NX equipped with the camera will act as a companion computer to an ArduPilot open-source autopilot.
-Communication between the autopilot and the companion computer will be performed using commands based on the standard MAVLink protocol.
-The main task of this project is to control the drone based on visual localization using the MAVLink protocol. The drone will fly in the direction of the mounted
-camera (X direction) and adjust its attitude (orientation) so that the detected object remains in the center of the camera image. This ensures that the drone flies
-toward the detected target object, enabling vision-based flight control.
+> **MSc Degree Thesis:** Feasibility Investigation of Vision-Based Control Methods for Small-Scale Drones
 
-Future work may extend the system to outdoor experiments, where GPS positioning from the ArduPilot autopilot system can be combined with visual feedback to enable
-more advanced autonomous navigation.
+This repository contains the software implementation for a vision-based control system for small-scale drones. The system enables autonomous target tracking and flight control using relative visual positioning, utilizing an NVIDIA Jetson Orin NX companion computer alongside an ArduPilot-based flight controller.
 
-Tasks to be performed by the student:
-- Review state-of-the-art vision-based drone control and object detection methods.
-- Set up the NVIDIA Jetson Orin NX system and interface it with the Raspberry Pi Camera V2.
-- Implement YOLO-based object detection for real-time processing and determine relative object positions.
-- Develop a vision-based control algorithm that keeps the detected object at the center of the camera image.
-- Generate MAVLink commands to control the autopilot.
-- Perform indoor tests on a bench-top model using the NVIDIA Jetson Orin NX and Raspberry Pi Camera V2 system, including the detection of indoor shapes and
-    generation of the corresponding MAVLink control commands. 
+## 🚀 Key Features
+
+- **Real-Time Object Detection**: Uses YOLO-based object detection optimized for NVIDIA Jetson Orin NX (via TensorRT/`.engine`).
+- **Visual Servoing**: Calculates relative object positions and keeps the detected target centered in the camera frame.
+- **MAVLink Integration**: Translates visual feedback into MAVLink attitude and velocity commands for ArduPilot.
+- **Hardware Optimized**: Interfaces directly with a Raspberry Pi Camera V2 for low-latency video capture.
+
+## 🛠️ Hardware Requirements
+
+- **Companion Computer**: NVIDIA Jetson Orin NX
+- **Flight Controller**: ArduPilot compatible board (e.g., Pixhawk)
+- **Camera**: Raspberry Pi Camera V2
+- **Drone Frame**: Small-scale quadcopter
+
+## 📁 Repository Structure
+
+- `classes/`: Object-oriented implementations for drone control, detection, and tracking.
+- `hard_code_version/`: Baseline sequential implementations and prototyping scripts.
+- `main.py`: Main entry point for the vision-based control loop.
+
+## ⚙️ Setup & Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/LucaBoni28/Vision-Based-Control-for-small-UAVs.git
+   cd Vision-Based-Control-for-small-UAVs
+   ```
+
+2. **Install dependencies**
+   *(Ensure you have Python 3.8+ installed on your Jetson Orin NX)*
+   ```bash
+   # Make sure TensorRT and Ultralytics YOLO are installed
+   pip install ultralytics pymavlink opencv-python
+   ```
+
+3. **Generate TensorRT Engine Files**
+   Developers generally do not commit large binary models (`.engine`, `.pt`) to the repository. Generate them locally on the Jetson Orin NX:
+   ```bash
+   yolo export model=yolov8n.pt format=engine
+   ```
+
+## 🎯 Usage
+
+Run the main vision-based control loop:
+```bash
+python main.py
+```
+
+## 📈 Future Work
+
+- Extension to outdoor environments combining GPS positioning with visual feedback.
+- Advanced autonomous navigation algorithms.
+
+## 📝 Tasks & Objectives
+
+- [x] Review state-of-the-art vision-based control and object detection.
+- [x] Interface NVIDIA Jetson Orin NX with Raspberry Pi Camera V2.
+- [x] Implement YOLO-based real-time object detection.
+- [x] Develop visual servoing control algorithm.
+- [x] Generate MAVLink control commands.
+- [ ] Perform indoor bench-top tests and validate flight behavior.
