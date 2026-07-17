@@ -60,7 +60,7 @@ class FlightController:
             self.telemetry_output = mavutil.mavlink_connection(
                 self._config.telemetry_output,
                 source_system=self._config.source_system,
-                source_component=self._config.source_component + 1,  # e.g. 3, distinct from master
+                source_component=self._config.source_component, 
             )
             print(f"Telemetry output connected to {self._config.telemetry_output}")
         except Exception as e:
@@ -71,15 +71,6 @@ class FlightController:
             self.master.target_system,
             self.master.target_component,
             mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
-            self._config.attitude_stream_rate_hz,
-            1,
-        )
-
-        # Request position stream for altitude data (GLOBAL_POSITION_INT)
-        self.master.mav.request_data_stream_send(
-            self.master.target_system,
-            self.master.target_component,
-            mavutil.mavlink.MAV_DATA_STREAM_POSITION,
             self._config.attitude_stream_rate_hz,
             1,
         )
@@ -175,22 +166,7 @@ class FlightController:
 
     # Sends a velocity command to the flight controller in the body frame, with the specified velocities in m/s and yaw rate in rad/s
     def send_velocity(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:
-        import time
-        current_time = time.time()
-
-        if current_time - self._last_vel_log > 1.0:
-            log_msg = f"Vel: Vx:{vx:.1f} Vy:{vy:.1f} Vz:{vz:.1f} Y:{yaw_rate:.1f}"
-            if self.master:
-                self.master.mav.statustext_send(mavutil.mavlink.MAV_SEVERITY_INFO, log_msg.encode('ascii')[:50])
-            self._last_vel_log = current_time
-
-        if self.telemetry_output:
-            time_boot_ms = int(current_time * 1000) % 4294967295
-            self.telemetry_output.mav.named_value_float_send(time_boot_ms, b'CmdVx', vx)
-            self.telemetry_output.mav.named_value_float_send(time_boot_ms, b'CmdVy', vy)
-            self.telemetry_output.mav.named_value_float_send(time_boot_ms, b'CmdVz', vz)
-            self.telemetry_output.mav.named_value_float_send(time_boot_ms, b'CmdYawR', yaw_rate)
-
+        
         self.master.mav.set_position_target_local_ned_send(
             0, self.target_system, self.target_component,
             mavutil.mavlink.MAV_FRAME_BODY_NED,
