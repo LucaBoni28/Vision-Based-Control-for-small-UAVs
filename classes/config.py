@@ -40,6 +40,7 @@ class MavlinkConfig:
     source_component: int
     attitude_stream_rate_hz: int
     baud: int
+    sitl: bool = False
 
 
 @dataclass
@@ -225,11 +226,9 @@ class AppConfig:
 
 
 if __name__ == "__main__":
-    # Load the configuration from config.yaml and print some key values for verification
-    cfg = AppConfig.load("config.yaml")
+    cfg = AppConfig.load("classes/config.yaml")
     print("Config loaded OK.")
     print(f"  MAVLink: {cfg.mavlink.connection}")
     print(f"  Video link: {cfg.video_link.host}:{cfg.video_link.port}")
     print(f"  Tracker backend: {cfg.tracker.backend}")
-    print(f"  Target area @ {cfg.calibration.desired_stopping_distance_m} m: "
-          f"{cfg.calibration.target_area():.1f}")
+    print(f"  Target distance: {cfg.calibration.desired_stopping_distance_m} m")

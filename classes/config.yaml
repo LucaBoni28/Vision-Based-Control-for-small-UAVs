@@ -9,8 +9,9 @@ mavlink:
   baud: 921600 # Baud rate (only used for direct serial connections)
   telemetry_output: tcp:100.112.124.116:5762 #udpout:100.112.124.116:14560 #tcp:100.112.124.116:5762 simulation
   source_system: 1
-  source_component: 2
+  source_component: 191
   attitude_stream_rate_hz: 10
+  sitl: true
 video_link:
   host: 100.112.124.116
   port: 5005

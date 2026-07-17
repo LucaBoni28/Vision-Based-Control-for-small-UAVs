@@ -88,9 +88,39 @@ This journal is used to track daily progress, challenges, and solutions to help 
 #### Thursday
 - 
 
-#### Friday
-- 
+#### Friday, July 17
+- **Mission Planner Telemetry Integration**: Successfully configured the system to make velocity commands (`SET_POSITION_TARGET_LOCAL_NED`) permanently visible in the Mission Planner MAVLink inspector.
+- **MAVLink Routing Fixes**: Identified that Mission Planner drops point-to-point commands addressed to the autopilot. Solved this by configuring the `telemetry_output` connection to broadcast the velocity commands (`target_system=0`, `target_component=0`), ensuring Mission Planner receives and displays them without the physical drone executing them twice.
+- **SITL Configuration Toggle**: Added a `sitl` boolean flag to `config.yaml` to decouple the SITL simulation overrides from the Mission Planner telemetry connection. The Ground Station can now receive mirrored commands for inspection even when the simulation is fully disabled.
+- **MAVProxy Heartbeat Resolution**: Diagnosed an issue where `wait_heartbeat()` was latching onto Component `0` instead of `1`. This was caused by MAVProxy generating local UDP keep-alive heartbeats that arrive milliseconds before the Pixhawk's serial heartbeat.
 
 ### 💡 Notes for Final Report
 - **Physical Hardware vs. Simulation (The EKF Conflict)**: We initially attempted to simulate flight movements (faking a GPS signal) while the physical Pixhawk was sitting on a test bench. However, this is fundamentally flawed due to the flight controller's Extended Kalman Filter (EKF). When the control algorithm commands a velocity, the motors spin up and the fake GPS reports movement. BUT, the physical IMU (accelerometer/gyro) on the bench reports zero acceleration. The EKF instantly detects this contradiction as a massive sensor variance error, triggering a failsafe and rejecting further autonomy commands.
 - **The Solution (SITL)**: The correct approach to simulate flight paths and test vision-control logic without a real flight is to use **Software-In-The-Loop (SITL)**. SITL entirely replaces the physical Pixhawk with a virtual one. Because the virtual Pixhawk simulates *all* sensors (GPS, IMU, Baro, Compass) in perfect unison based on the physics engine, the EKF remains stable. We can run this lightweight SITL directly inside Mission Planner and route the Jetson's MAVLink connection to it via TCP/UDP over the network, allowing full system testing without hardware conflicts.
+- **MAVLink Network Architecture (Identities & Connections)**: 
+  A crucial aspect of multi-device UAV networks is the distinction between identities and connections. In MAVLink, physical devices and connections are two different concepts.
+
+  #### 1. The Identities (System ID & Component ID)
+  In MAVLink, every piece of hardware or software is a "node" identified by a `(System_ID, Component_ID)` pair. 
+  *   **System ID** represents a single vehicle or a completely separate entity.
+  *   **Component ID** represents a specific subsystem *inside* that vehicle.
+
+  For our physical setup:
+  1.  **Pixhawk (Autopilot)**
+      *   **System ID:** `1` (It is the core of Vehicle 1)
+      *   **Component ID:** `1` (Standard ID for the main flight controller)
+  2.  **Jetson (Companion Computer)**
+      *   **System ID:** `1` (Because it is physically mounted on and part of Vehicle 1)
+      *   **Component ID:** `191` (Standard ID for an onboard companion computer)
+      *   *Note: Any message the Python script generates is stamped with `1:191` so everyone knows who sent it.*
+  3.  **PC (Mission Planner)**
+      *   **System ID:** `255` (The standard ID reserved for Ground Control Stations)
+      *   **Component ID:** `190` or `0` (Standard ID for Mission Planner)
+
+  #### 2. The Connections (`master` and `telemetry_output`)
+  Connections are just the "wires" (or TCP/UDP sockets) connecting these identities together. The Jetson is currently talking on two different wires:
+
+  *   **`master` Connection (Jetson <--> Pixhawk)**
+      This wire connects the Python script (1:191) to the Pixhawk (1:1). When we want the drone to move, we send `mav.set_position_target_local_ned_send` over this wire, specifically addressed to **Target 1:1**. The Pixhawk reads it and executes the movement.
+  *   **`telemetry_output` Connection (Jetson <--> PC/Mission Planner)**
+      This wire is a direct TCP tunnel between the Python script (1:191) and Mission Planner (255:190). Because we want to visualize the velocities in Mission Planner, the Python script sends a *copy* of the velocity command over this wire. By addressing the copy to **Target 0:0** (Broadcast), Mission Planner happily receives it and displays it in the MAVLink inspector under the Jetson's identity (Source 1:191). Additionally, the Jetson must send `HEARTBEAT` messages over this link to prevent Mission Planner from marking the `1:191` component as disconnected.

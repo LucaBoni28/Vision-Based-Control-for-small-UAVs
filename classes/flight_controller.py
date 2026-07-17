@@ -51,11 +51,6 @@ class FlightController:
         print(f"System ID: {self.master.target_system}")
         print(f"Component ID: {self.master.target_component}")
 
-        # Telemetry output to Ground Station (e.g. Mission Planner via Tailscale).
-        # Uses a different source_component (3) to avoid identity conflicts with the
-        # primary master connection (source_component=2) when MAVProxy is routing.
-        # Wrapped in try/except so the program does not hang if Mission Planner is not
-        # yet listening on the TCP port at startup time.
         try:
             self.telemetry_output = mavutil.mavlink_connection(
                 self._config.telemetry_output,
@@ -75,7 +70,7 @@ class FlightController:
             1,
         )
 
-        if self.telemetry_output:
+        if self.telemetry_output and self._config.sitl:
             try:
                 # Also request position from the simulation
                 self.telemetry_output.mav.request_data_stream_send(
@@ -146,7 +141,7 @@ class FlightController:
                 self._relative_alt_m = msg.relative_alt / 1000.0  # mm → m
 
         # Check simulation (telemetry_output)
-        if self.telemetry_output:
+        if self.telemetry_output and self._config.sitl:
             msg_sim = None
             # Drain the buffer and grab the latest GLOBAL_POSITION_INT
             while True:
@@ -177,11 +172,11 @@ class FlightController:
             0, yaw_rate,
         )
 
-        # Mirror the velocity command to telemetry_output (used by SITL simulation)
+        # Mirror the velocity command to telemetry_output
         if self.telemetry_output:
             try:
                 self.telemetry_output.mav.set_position_target_local_ned_send(
-                    0, self.target_system, self.target_component,
+                    0, 0, 0, # Target system 0 and component 0 (Broadcast) so MP accepts it
                     mavutil.mavlink.MAV_FRAME_BODY_NED,
                     0b0000011111000111,
                     0, 0, 0,
@@ -206,14 +201,12 @@ class FlightController:
                 1, # confirmation
                 0, 0, 0, 0, 0, 0, 0
             )
-            print("SENT LAND COMMAND FOR SAFETY!")
-
+            
         # Mirror the land command to telemetry_output (used by SITL simulation)
         if self.telemetry_output:
             try:
                 self.telemetry_output.mav.command_long_send(
-                    self.target_system,
-                    self.target_component,
+                    0, 0, # Target system 0 and component 0 (Broadcast) so MP accepts it
                     mavutil.mavlink.MAV_CMD_NAV_LAND,
                     1, # confirmation
                     0, 0, 0, 0, 0, 0, 0
