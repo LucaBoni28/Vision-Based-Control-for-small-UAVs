@@ -129,8 +129,16 @@ class CommandReceiver:
     # Initializes the CommandReceiver with the given command link configuration
     def __init__(self, command_link_config: CommandLinkConfig):
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._socket.bind(("0.0.0.0", command_link_config.port))
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.bind((command_link_config.jetson_host, command_link_config.port))
         self._socket.setblocking(False)
+
+    # Closes the UDP socket, releasing the bound port
+    def close(self):
+        try:
+            self._socket.close()
+        except Exception:
+            pass
 
     # Sends feedback status back to the sender at the given address
     def send_feedback(self, addr, status_type: int) -> None:

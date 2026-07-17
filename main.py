@@ -68,11 +68,14 @@ def main() -> None:
     distance_estimator = DistanceEstimator(config.calibration)
 
     # Create the mission controller and run the mission
-    mission = MissionController(
-        config, camera, flight, streamer, tracker, target_selector,
-        distance_estimator, detector, command_receiver
-    )
-    mission.run()
+    try:
+        mission = MissionController(
+            config, camera, flight, streamer, tracker, target_selector,
+            distance_estimator, detector, command_receiver
+        )
+        mission.run()
+    finally:
+        command_receiver.close()
 
 # Run the main function if this script is executed directly
 if __name__ == "__main__":
