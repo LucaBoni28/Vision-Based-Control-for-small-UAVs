@@ -51,6 +51,7 @@ class FlightController:
         print(f"System ID: {self.master.target_system}")
         print(f"Component ID: {self.master.target_component}")
 
+        print(f"Waiting for Mission Planner to launch the simulation...")
         try:
             self.telemetry_output = mavutil.mavlink_connection(
                 self._config.telemetry_output,

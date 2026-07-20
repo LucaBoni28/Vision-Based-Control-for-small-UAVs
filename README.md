@@ -57,13 +57,20 @@ To solve this, use **MAVProxy** as a central router running on the Jetson:
 3. The Python script (`main.py`) connects to a local UDP endpoint (e.g., `udpin:0.0.0.0:14551`).
 4. Mission Planner (on the remote PC) connects to another endpoint routed securely over the Tailscale VPN.
 
-This architecture allows our vision system to send flight commands to the drone while you simultaneously monitor real-time telemetry on the Ground Station.
-
-### Install Dependencies
-Install the required Python libraries on the Jetson:
+**Install Dependencies & MAVProxy:**
+MAVProxy is a standalone application that is installed as a Python package via pip (it utilizes `pymavlink` under the hood). You can install it alongside the other project dependencies on the Jetson:
 ```bash
-pip install ultralytics pymavlink opencv-python pyyaml
+pip install MAVProxy ultralytics pymavlink opencv-python pyyaml
 ```
+
+**Run MAVProxy:**
+To start MAVProxy, run the following command on the Jetson:
+```bash
+mavproxy.py --master=/dev/ttyACM0 --out=udp:127.0.0.1:14551 --out=udp:100.x.x.x:14550
+```
+*Note: Replace `100.x.x.x` with the Tailscale IP address of your Ground Station PC, and `/dev/ttyACM0` with the actual serial port of your flight controller. The UDP ports (`14551` and `14550`) can be arbitrarily chosen, but they must be consistent. For example, if the Python script (`config.yaml`) is configured to connect to port `14551`, MAVProxy must have a corresponding `--out=udp:127.0.0.1:14551` endpoint.*
+
+This architecture allows our vision system to send flight commands to the drone while you simultaneously monitor real-time telemetry on the Ground Station.
 
 ### Generate TensorRT Engine File
 For real-time performance on the Jetson, you must convert the PyTorch YOLO model into a TensorRT `.engine` format.
@@ -93,7 +100,7 @@ python main.py
 
 ---
 
-## 🛠️ Hardware Requirements
+## Hardware Requirements
 - **Companion Computer**: NVIDIA Jetson Orin NX
 - **Flight Controller**: ArduPilot compatible board (e.g., Pixhawk, Cube Orange)
 - **Camera**: Raspberry Pi Camera V2 or similar CSI camera
