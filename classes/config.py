@@ -35,12 +35,18 @@ class CameraConfig:
 @dataclass
 class MavlinkConfig:
     connection: str
-    telemetry_output: str
+    ground_station_ip: str
     source_system: int
     source_component: int
     attitude_stream_rate_hz: int
     baud: int
     sitl: bool = False
+
+    @property
+    def telemetry_output(self) -> str:
+        if self.sitl:
+            return f"tcp:{self.ground_station_ip}:5762"
+        return f"udpout:{self.ground_station_ip}:14560"
 
 
 @dataclass
