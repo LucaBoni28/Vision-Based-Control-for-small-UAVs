@@ -83,16 +83,51 @@ class FlightController:
             except Exception:
                 pass
 
+    # Drains the MAVLink socket buffers for both the physical drone and SITL simulation
+    def update(self) -> None:
+        if self.master:
+            while True:
+                msg = self.master.recv_match(blocking=False)
+                if not msg:
+                    break
+                if msg.get_type() == "HEARTBEAT":
+                    if msg.type not in (mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER):
+                        if not getattr(self, '_sitl_heartbeat_active', False):
+                            self._last_heartbeat = msg
+
+                if msg.get_type() == "GLOBAL_POSITION_INT":
+                    if not getattr(self, '_sitl_alt_active', False):
+                        self._relative_alt_m = msg.relative_alt / 1000.0
+
+                if msg.get_type() == "ATTITUDE":
+                    self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw)
+
+        if self.telemetry_output and self._config.sitl:
+            while True:
+                msg = self.telemetry_output.recv_match(blocking=False)
+                if not msg:
+                    break
+                
+                if msg.get_type() == "HEARTBEAT":
+                    if msg.type not in (mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER):
+                        if not getattr(self, '_sitl_heartbeat_active', False):
+                            print("SITL HEARTBEAT DETECTED! Using simulated drone state.")
+                        self._sitl_heartbeat_active = True
+                        self._last_heartbeat = msg
+
+                if msg.get_type() == "GLOBAL_POSITION_INT":
+                    if not getattr(self, '_sitl_alt_active', False):
+                        print(f"SITL ALTITUDE DETECTED! Overriding physical drone (SITL Alt: {msg.relative_alt / 1000.0}m)")
+                    self._sitl_alt_active = True
+                    self._relative_alt_m = msg.relative_alt / 1000.0
+
     # Polls for a new HEARTBEAT message from the flight controller, updating the stored heartbeat
     def poll_heartbeat(self) -> None:
         if not self.master:
             return
             
-        msg = self.master.recv_match(type="HEARTBEAT", blocking=False)
-        # Ensure we only save the autopilot's heartbeat, not our own echoed back by MAVProxy
-        if msg and msg.get_srcComponent() == self.master.target_component:
-            self._last_heartbeat = msg
-            
+        self.update()
+
         # Send our own companion computer heartbeat at 1Hz continuously
         current_time = time.time()
         if current_time - self._last_heartbeat_sent > 1.0:
@@ -101,11 +136,15 @@ class FlightController:
                 mavutil.mavlink.MAV_AUTOPILOT_INVALID,
                 0, 0, 0
             )
-            self.telemetry_output.mav.heartbeat_send(
-                mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
-                mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                0, 0, 0
-            )
+            if self.telemetry_output:
+                try:
+                    self.telemetry_output.mav.heartbeat_send(
+                        mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
+                        mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                        0, 0, 0
+                    )
+                except Exception:
+                    pass
             self._last_heartbeat_sent = current_time
 
     # Returns True if the drone is currently armed, based on the latest heartbeat
@@ -122,11 +161,41 @@ class FlightController:
     def target_component(self):
         return self.master.target_component
 
+    def get_flight_mode(self) -> str:
+        if self._last_heartbeat is None:
+            return "UNKNOWN"
+        if self.master and hasattr(self.master, 'mode_mapping'):
+            mapping = self.master.mode_mapping()
+            if mapping:
+                for name, num in mapping.items():
+                    if num == self._last_heartbeat.custom_mode:
+                        return name
+        return mavutil.mode_string_v10(self._last_heartbeat)
+
+    def set_flight_mode(self, mode: str) -> None:
+        if not self.master or not hasattr(self.master, 'mode_mapping'):
+            return
+        mapping = self.master.mode_mapping()
+        if mapping and mode in mapping:
+            mode_id = mapping[mode]
+            
+            # Send to physical drone / primary link using pymavlink's set_mode
+            self.master.set_mode(mode_id)
+
+            # Mirror to SITL/Mission Planner telemetry link
+            if self.telemetry_output and hasattr(self.telemetry_output, 'set_mode'):
+                try:
+                    self.telemetry_output.set_mode(mode_id)
+                except Exception:
+                    pass
+
+            print(f"Requested flight mode change to: {mode} (ID: {mode_id})")
+        else:
+            print(f"Unknown flight mode: {mode}")
+
     # Polls for a new ATTITUDE message from the flight controller, returning the most recent roll, pitch, and yaw values
     def poll_attitude(self) -> Attitude:
-        msg = self.master.recv_match(type="ATTITUDE", blocking=False)
-        if msg:
-            self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw)
+        self.update()
         return self._attitude
 
     def poll_pitch(self) -> float:
@@ -134,29 +203,7 @@ class FlightController:
 
     # Polls for a new GLOBAL_POSITION_INT message and returns relative altitude in meters (above home). Returns None if no data received yet.
     def poll_relative_alt(self) -> float:
-        # Check physical drone (master)
-        msg = self.master.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
-        if msg:
-            # Only update from physical if SITL hasn't taken over
-            if not getattr(self, '_sitl_alt_active', False):
-                self._relative_alt_m = msg.relative_alt / 1000.0  # mm → m
-
-        # Check simulation (telemetry_output)
-        if self.telemetry_output and self._config.sitl:
-            msg_sim = None
-            # Drain the buffer and grab the latest GLOBAL_POSITION_INT
-            while True:
-                m = self.telemetry_output.recv_match(type="GLOBAL_POSITION_INT", blocking=False)
-                if not m:
-                    break
-                msg_sim = m
-                
-            if msg_sim:
-                if not getattr(self, '_sitl_alt_active', False):
-                    print(f"SITL ALTITUDE DETECTED! Overriding physical drone (SITL Alt: {msg_sim.relative_alt / 1000.0}m)")
-                self._sitl_alt_active = True  # Permanently prioritize SITL for this session
-                self._relative_alt_m = msg_sim.relative_alt / 1000.0  # mm → m
-
+        self.update()
         return self._relative_alt_m
 
 

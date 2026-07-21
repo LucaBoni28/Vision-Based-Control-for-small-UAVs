@@ -74,6 +74,11 @@ class MissionController:
         self._stream_land_command_sent = False
         self._hover_timeout = config.control.hover_timeout  # seconds to hover before landing on stream loss
 
+        self._mission_state = "WAITING_TAKEOFF"
+        self._hover_alt_min = 9999.0
+        self._hover_alt_max = -9999.0
+        self._hover_start_time = None
+
         self._reset_tracking_memory()
 
 
@@ -156,6 +161,7 @@ class MissionController:
                 current_time = time.time()
                 if self._stream_lost_time is None:
                     print(f"VIDEO STREAM LOST! Hovering for {self._hover_timeout:.0f} seconds before landing...")
+                    print("Launch your Ground Station video receiver script again to reconnect and resume the mission!")
                     self._stream_lost_time = current_time
                     self._stream_land_command_sent = False
                     self.flight.send_stop()
@@ -199,7 +205,51 @@ class MissionController:
                 self.distance_estimator.abort_recording()
                 self._calibration_warning_until = time.time() + 5.0
 
-            self._process_frame(frame)
+            current_alt = self.flight.poll_relative_alt()
+            flight_mode = self.flight.get_flight_mode()
+
+            if self._mission_state == "WAITING_TAKEOFF":
+                if self.flight.is_armed() and current_alt is not None and current_alt >= self.config.mission_behavior.min_takeoff_alt_m:
+                    if self._hover_start_time is None:
+                        self._hover_start_time = time.time()
+                        self._hover_alt_min = current_alt
+                        self._hover_alt_max = current_alt
+                    else:
+                        self._hover_alt_min = min(self._hover_alt_min, current_alt)
+                        self._hover_alt_max = max(self._hover_alt_max, current_alt)
+                        
+                        if (self._hover_alt_max - self._hover_alt_min) > self.config.mission_behavior.hover_stability_threshold_m:
+                            # Hover is not stable, reset timer
+                            self._hover_start_time = time.time()
+                            self._hover_alt_min = current_alt
+                            self._hover_alt_max = current_alt
+                        elif (time.time() - self._hover_start_time) >= self.config.mission_behavior.hover_stability_time_s:
+                            print("Stable hover detected. Auto-starting mission and switching to GUIDED mode.")
+                            self.flight.set_flight_mode("GUIDED")
+                            self._mission_state = "TRACKING"
+                else:
+                    self._hover_start_time = None
+
+            elif self._mission_state == "TRACKING":
+                if flight_mode != "GUIDED" and flight_mode != "UNKNOWN":
+                    print(f"Emergency stop / Override detected (Mode changed to {flight_mode}). Pausing mission.")
+                    self._mission_state = "PAUSED"
+                    # Reset tracking memory to drop target when paused
+                    self._reset_tracking_memory()
+
+            elif self._mission_state == "PAUSED":
+                if flight_mode == "GUIDED":
+                    print("Mode switched back to GUIDED. Resuming mission.")
+                    self._mission_state = "TRACKING"
+
+            if self._mission_state == "TRACKING":
+                self._process_frame(frame)
+            else:
+                # Still draw info and stream, but do not process targets or send velocity commands
+                cv2.putText(frame, f"State: {self._mission_state}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                if current_alt is not None:
+                    cv2.putText(frame, f"Alt: {current_alt:.1f}m", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                self._stream(frame)
 
         self.camera.release()
         cv2.destroyAllWindows()

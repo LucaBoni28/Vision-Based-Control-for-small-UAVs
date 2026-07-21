@@ -107,6 +107,12 @@ class CalibrationConfig:
     optical_constant: float
     frames_per_sample: int = 30  # Number of frames to capture and average per distance sample
 
+@dataclass
+class MissionBehaviorConfig:
+    min_takeoff_alt_m: float
+    hover_stability_time_s: float
+    hover_stability_threshold_m: float
+
 
 @dataclass
 class DisplayConfig:
@@ -145,6 +151,7 @@ class AppConfig:
     target_selection: TargetSelectionConfig
     command_link: CommandLinkConfig
     pitch_compensation: PitchCompensationConfig
+    mission_behavior: MissionBehaviorConfig
     # Loads the configuration from a YAML file at the given path and returns an AppConfig instance
     @staticmethod
     def load(path: str | Path = "config.yaml") -> "AppConfig":
@@ -177,6 +184,7 @@ class AppConfig:
                 target_selection=TargetSelectionConfig(**raw["target_selection"]),
                 command_link=CommandLinkConfig(**raw["command_link"]),
                 pitch_compensation=PitchCompensationConfig(**raw.get("pitch_compensation", {"mode": "software"})),
+                mission_behavior=MissionBehaviorConfig(**raw["mission_behavior"]),
             )
         except KeyError as e:
             raise ValueError(f"config.yaml is missing required section/key: {e}") from e
