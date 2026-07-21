@@ -1,66 +1,91 @@
+# -----------------------------------------
+# Configuration file
+# -----------------------------------------
+
+# Camera hardware settings
 camera:
   sensor_id: 0
   width: 1280
   height: 960
   framerate: 30
+
+# Connection settings for communicating with the flight controller
 mavlink:
-  connection: udpin:0.0.0.0:14551 # MAVProxy UDP stream (MAVProxy owns the serial port)
-  # connection: /dev/ttyUSB0       # Direct serial (only use this if NOT running MAVProxy)
-  baud: 921600 # Baud rate (only used for direct serial connections)
-  ground_station_ip: 100.112.124.116
-  source_system: 1
-  source_component: 191
-  attitude_stream_rate_hz: 10
-  sitl: false
+  connection: udpin:0.0.0.0:14551    # MAVProxy UDP stream (MAVProxy owns the serial port)
+  # connection: /dev/ttyUSB0         # Direct serial (only use this if NOT running MAVProxy)
+  baud: 921600                       # Baud rate (only used for direct serial connections)
+  ground_station_ip: 100.112.124.116 # IP address of the ground control station
+  source_system: 1                   # MAVLink system ID for companion computer
+  source_component: 191              # MAVLink component ID (191 = MAV_COMP_ID_ONBOARD_COMPUTER)
+  attitude_stream_rate_hz: 10        # Rate at which to request attitude data from the FC
+  sitl: false                        # Set to true if running with Software In The Loop simulator
+
+# UDP video streaming to the ground station
 video_link:
-  host: 100.112.124.116
-  port: 5005
+  host: 100.112.124.116              # IP address to stream video to
+  port: 5005                         # UDP port for video streaming
+
+# Object detection model settings
 model:
-  path: yolo26n.engine
-  task: detect
+  path: yolo26n.engine               # Path to the TensorRT optimized engine file
+  task: detect                       # Task type (detect, segment)
 detection:
   classes:
-    - 62
-  confidence: 0.65
+    - 62                             # Class ID to detect (62 = tv monitor in COCO)
+  confidence: 0.65                   # Minimum confidence threshold for valid detections
+
+# Object tracking algorithm settings
 tracker:
-  backend: bytetrack # bytetrack - deepsort - botsort
-  config_file: bytetrack.yaml # ignore when backend is deepsort
-  max_timeout_frames: 50
+  backend: bytetrack                 # Tracking backend (bytetrack, deepsort, botsort)
+  config_file: bytetrack.yaml        # Configuration file for the tracker (ignored for deepsort)
+  max_timeout_frames: 50             # Maximum number of frames to wait before declaring a target lost
   deepsort:
-    max_age: 50
-    embedder: mobilenet
-    half: false
-    max_cosine_distance: 0.8
-    n_init: 1
-    max_iou_distance: 0.8
+    max_age: 50                      # Maximum frames to keep a track without matching
+    embedder: mobilenet              # Feature extractor model for DeepSORT
+    half: false                      # Whether to use half-precision (FP16)
+    max_cosine_distance: 0.8         # Threshold for cosine distance matching
+    n_init: 1                        # Number of frames target must be seen to become active
+    max_iou_distance: 0.8            # Threshold for IoU matching
+
+# PID controller gains and deadzones for drone movement
 control:
-  k_p_yaw: 4.231974921630094
-  k_d_yaw: 0.3887147335423197
-  k_p_vz: 3.714733542319749
-  k_d_vz: 0.5266457680250783
-  k_p_vx: 1.5517241379310347
-  r_stop: 0.8
-  yaw_deadzone: 0.03
-  vz_deadzone: 0.03
-  area_deadzone: 0.05
-  max_derivative_dt: 0.5
-  k_d_vx: 0.9529780564263323
-  hover_timeout: 20.0
+  k_p_yaw: 4.231974921630094         # Proportional gain for yaw (turning left/right)
+  k_d_yaw: 0.3887147335423197        # Derivative gain for yaw
+  k_p_vz: 3.714733542319749          # Proportional gain for vertical velocity (up/down)
+  k_d_vz: 0.5266457680250783         # Derivative gain for vertical velocity
+  k_p_vx: 1.5517241379310347         # Proportional gain for forward velocity (approaching)
+  r_stop: 0.8                        # Stop ratio or target area ratio for approach
+  yaw_deadzone: 0.03                 # Minimum error in yaw to act upon
+  vz_deadzone: 0.03                  # Minimum error in vertical position to act upon
+  area_deadzone: 0.05                # Minimum error in area (distance) to act upon
+  max_derivative_dt: 0.5             # Maximum delta time allowed for derivative calculation
+  k_d_vx: 0.9529780564263323         # Derivative gain for forward velocity
+  hover_timeout: 20.0                # Time (seconds) to wait in hover before fallback action (landing)
+
+# Camera calibration and distance estimation parameters
 calibration:
-  file: calibration.json
-  desired_stopping_distance_m: 0.6
-  optical_constant: 7192.943181818182
-  frames_per_sample: 30
+  file: calibration.json              # File storing calibration data
+  desired_stopping_distance_m: 0.6    # Target distance to stop from the tracked object
+  optical_constant: 7192.943181818182 # Pre-calculated constant for distance estimation based on bounding box size
+  frames_per_sample: 30               # Number of frames to average for calibration
+
+# Ground station video stream configuration
 display:
-  stream_width: 640
-  stream_height: 480
-  jpeg_quality: 60
-  ground_station_window_width: 1280
-  ground_station_window_height: 720
+  stream_width: 640                   # Width of the transmitted video stream
+  stream_height: 480                  # Height of the transmitted video stream
+  jpeg_quality: 60                    # Quality of the JPEG compression for the video stream
+  ground_station_window_width: 1280   # GUI window width on ground station
+  ground_station_window_height: 720   # GUI window height on ground station
+
+# Target selection configuration
 target_selection:
-  mode: manual
+  mode: auto  # 'manual' (click to lock) or 'auto' (lock onto highest confidence)
+
+# Command link configuration
 command_link:
-  jetson_host: 100.109.108.81
-  port: 5006
+  jetson_host: 100.109.108.81 # IP address of the Jetson companion computer
+  port: 5006                  # UDP port for receiving commands from ground station
+
+# Handles camera pitch relative to drone pitch
 pitch_compensation:
-  mode: software # 'software', 'gimbal_auto', 'gimbal_manual', or 'none'
+  mode: software # 'software' (adjusts bounding boxes), 'gimbal_auto', 'gimbal_manual', or 'none'
