@@ -232,7 +232,7 @@ class MissionController:
 
             elif self._mission_state == "TRACKING":
                 if flight_mode != "GUIDED" and flight_mode != "UNKNOWN":
-                    print(f"Emergency stop / Override detected (Mode changed to {flight_mode}). Pausing mission.")
+                    print(f"Manual override detected (Mode changed to {flight_mode}). Pausing mission.")
                     self._mission_state = "PAUSED"
                     # Reset tracking memory to drop target when paused
                     self._reset_tracking_memory()

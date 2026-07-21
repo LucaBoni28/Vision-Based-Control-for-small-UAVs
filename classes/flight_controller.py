@@ -103,23 +103,48 @@ class FlightController:
                     self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw)
 
         if self.telemetry_output and self._config.sitl:
-            while True:
-                msg = self.telemetry_output.recv_match(blocking=False)
-                if not msg:
-                    break
-                
-                if msg.get_type() == "HEARTBEAT":
-                    if msg.type not in (mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER):
-                        if not getattr(self, '_sitl_heartbeat_active', False):
-                            print("SITL HEARTBEAT DETECTED! Using simulated drone state.")
-                        self._sitl_heartbeat_active = True
-                        self._last_heartbeat = msg
+            # Prevent "EOF on TCP socket" spam by detecting dead sockets early
+            is_dead = False
+            if hasattr(self.telemetry_output, 'port') and hasattr(self.telemetry_output.port, 'fileno'):
+                try:
+                    if self.telemetry_output.port.fileno() == -1:
+                        is_dead = True
+                except Exception:
+                    is_dead = True
 
-                if msg.get_type() == "GLOBAL_POSITION_INT":
-                    if not getattr(self, '_sitl_alt_active', False):
-                        print(f"SITL ALTITUDE DETECTED! Overriding physical drone (SITL Alt: {msg.relative_alt / 1000.0}m)")
-                    self._sitl_alt_active = True
-                    self._relative_alt_m = msg.relative_alt / 1000.0
+            if is_dead:
+                print("[WARNING] Telemetry output connection closed by peer.")
+                try:
+                    self.telemetry_output.close()
+                except:
+                    pass
+                self.telemetry_output = None
+            else:
+                try:
+                    while True:
+                        msg = self.telemetry_output.recv_match(blocking=False)
+                        if not msg:
+                            break
+                        
+                        if msg.get_type() == "HEARTBEAT":
+                            if msg.type not in (mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER):
+                                if not getattr(self, '_sitl_heartbeat_active', False):
+                                    print("SITL HEARTBEAT DETECTED! Using simulated drone state.")
+                                self._sitl_heartbeat_active = True
+                                self._last_heartbeat = msg
+
+                        if msg.get_type() == "GLOBAL_POSITION_INT":
+                            if not getattr(self, '_sitl_alt_active', False):
+                                print(f"SITL ALTITUDE DETECTED! Overriding physical drone (SITL Alt: {msg.relative_alt / 1000.0}m)")
+                            self._sitl_alt_active = True
+                            self._relative_alt_m = msg.relative_alt / 1000.0
+                except Exception as e:
+                    print(f"[WARNING] Telemetry receive error: {e}")
+                    try:
+                        self.telemetry_output.close()
+                    except:
+                        pass
+                    self.telemetry_output = None
 
     # Polls for a new HEARTBEAT message from the flight controller, updating the stored heartbeat
     def poll_heartbeat(self) -> None:
@@ -128,8 +153,30 @@ class FlightController:
             
         self.update()
 
-        # Send our own companion computer heartbeat at 1Hz continuously
         current_time = time.time()
+        
+        # Automatically try to reconnect telemetry output if it was lost and we are in SITL
+        if self._config.sitl and self.telemetry_output is None:
+            if not hasattr(self, '_last_telemetry_reconnect') or current_time - getattr(self, '_last_telemetry_reconnect') > 5.0:
+                self._last_telemetry_reconnect = current_time
+                try:
+                    self.telemetry_output = mavutil.mavlink_connection(
+                        self._config.telemetry_output,
+                        source_system=self._config.source_system,
+                        source_component=self._config.source_component, 
+                    )
+                    print(f"Telemetry output reconnected to {self._config.telemetry_output}")
+                    # Re-request position from the simulation
+                    self.telemetry_output.mav.request_data_stream_send(
+                        1, 1, 
+                        mavutil.mavlink.MAV_DATA_STREAM_POSITION,
+                        self._config.attitude_stream_rate_hz,
+                        1,
+                    )
+                except Exception:
+                    pass # Silently fail until Mission Planner is back up
+                    
+        # Send our own companion computer heartbeat at 1Hz continuously
         if current_time - self._last_heartbeat_sent > 1.0:
             self.master.mav.heartbeat_send(
                 mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
@@ -143,8 +190,14 @@ class FlightController:
                         mavutil.mavlink.MAV_AUTOPILOT_INVALID,
                         0, 0, 0
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[WARNING] Failed to send telemetry heartbeat: {e}")
+                    try:
+                        self.telemetry_output.close()
+                    except:
+                        pass
+                    self.telemetry_output = None
+                    
             self._last_heartbeat_sent = current_time
 
     # Returns True if the drone is currently armed, based on the latest heartbeat
