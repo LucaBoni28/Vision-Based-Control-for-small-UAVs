@@ -16,14 +16,20 @@ import sys
 import select
 # from deep_sort_realtime.deepsort_tracker import DeepSort
 from pymavlink import mavutil
-
-
-# # Create a local, failsafe CSV log
-# with open('thesis_distance_log.csv', 'w') as f:
-#     f.write("Time_Sec,Distance_Est,BB_Area,v_x,v_z,omega_z\n")
+import argparse
+from graphs_generation.thesis_logger import ThesisLogger
 
 # Capture the exact start time to align the graph later
 script_start_time = time.time()
+
+# Parse test mode from command line (optional — no flags = normal operation)
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--test', choices=['benchmark', 'distance'], default=None,
+                    help='Enable CSV logging: benchmark (Ch.4) or distance (Ch.6)')
+parser.add_argument('--tracker', default='bytetrack',
+                    help='Tracker name for benchmark CSV filename')
+args, _ = parser.parse_known_args()
+logger = ThesisLogger(args.test, tracker_name=args.tracker) if args.test else None
 
 
 
@@ -121,11 +127,14 @@ OPTICAL_CONSTANT = 75000*(1.5)**2
 DESIRED_STOPPING_DISTANCE = 0.6   # [m]
 TARGET_AREA = OPTICAL_CONSTANT / (DESIRED_STOPPING_DISTANCE**2)             # Default value
 
+frame_number = 0
 
 while cap.isOpened():
     success, frame = cap.read()
     if not success:
         break
+    frame_number += 1
+    t_frame_capture = time.time()
 
     target_found_this_frame = False
     
@@ -173,6 +182,7 @@ while cap.isOpened():
     # # 3. Running the Kalman Filter to predict kinematics
     # tracks = tracker.update_tracks(bbs_expected_by_tracker, frame=frame)
 
+    t_before_track = time.time()
     results = model.track(
         frame,
         classes=[62],
@@ -181,8 +191,12 @@ while cap.isOpened():
         tracker="bytetrack.yaml", #botsort.yaml
         verbose=False
     )
+    t_after_track = time.time()
 
     target_found_this_frame = False
+    _log_track_id = -1
+    _log_bbox_x = 0
+    _log_bbox_y = 0
     
     # # Control logic loop and visualization
     # for track in tracks:
@@ -225,6 +239,9 @@ while cap.isOpened():
                 # Calculate the current physical center of the target
                 bb_center_x = int((x1 + x2) / 2)
                 bb_center_y = int((y1 + y2) / 2)
+                _log_track_id = int(track_id)
+                _log_bbox_x = bb_center_x
+                _log_bbox_y = bb_center_y
                 
                 # Calculate the mathematical offset from the camera's true center
                 error_x = bb_center_x - CENTER_X  
@@ -298,11 +315,6 @@ while cap.isOpened():
             else:
                 distance_estimate = 0.0
 
-            # # Log directly to the Jetson's hard drive
-            # current_time = time.time() - script_start_time
-            # with open('thesis_distance_log.csv', 'a') as f:
-            #     f.write(f"{current_time},{distance_estimate},{current_area},{v_x},{v_z},{omega_z}\n")
-        
             # Send the MAVLink command
             master.mav.set_position_target_local_ned_send(
                 0, master.target_system, master.target_component,
@@ -313,6 +325,20 @@ while cap.isOpened():
                 0, 0, 0,
                 0, omega_z
             )
+            t_after_mavlink = time.time()
+
+            # Distance test logging (Chapter 6)
+            if logger and args.test == "distance" and track_id == locked_id:
+                logger.log(
+                    Time_Sec=round(t_frame_capture - script_start_time, 3),
+                    A_real=current_area,
+                    Distance_Est=round(distance_estimate, 4),
+                    v_x=round(v_x, 4),
+                    v_z=round(v_z, 4),
+                    omega_z=round(omega_z, 4),
+                    current_pitch_rad=round(current_pitch_rad, 6),
+                    Pipeline_Latency_ms=round((t_after_mavlink - t_frame_capture) * 1000, 1),
+                )
 
             # Update the memory states
             prev_error_y = e_y_compensated
@@ -324,6 +350,17 @@ while cap.isOpened():
             cv2.putText(frame, f"ID: {track_id}", (int(x1), int(y1) - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
             cv2.arrowedLine(frame, (CENTER_X, CENTER_Y), (bb_center_x, bb_center_y), (0, 0, 255), 5, tipLength=0.05)
+
+    # Benchmark test logging (Chapter 4) — one row per frame
+    if logger and args.test == "benchmark":
+        logger.log(
+            Frame_Number=frame_number,
+            Time_Sec=round(t_frame_capture - script_start_time, 3),
+            Processing_Time_ms=round((t_after_track - t_before_track) * 1000, 1),
+            Object_ID=_log_track_id,
+            Bbox_X=_log_bbox_x,
+            Bbox_Y=_log_bbox_y,
+        )
 
     # UI Overlay
     cv2.putText(frame, f"FPS: {fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
@@ -364,3 +401,5 @@ while cap.isOpened():
         
 cap.release()
 cv2.destroyAllWindows()
+if logger:
+    logger.close()
