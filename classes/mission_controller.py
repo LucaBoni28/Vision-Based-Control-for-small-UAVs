@@ -34,6 +34,7 @@ from classes.click_command import CMD_CONFIRM
 from classes.click_command import CMD_REJECT
 from classes.target_selector import ManualClickSelector
 from classes.click_command import CommandReceiver
+import sys
 import time
 import math
 import cv2
@@ -174,9 +175,25 @@ class MissionController:
 
                     # Wait for drone to reach ground, then exit the script cleanly
                     print("Waiting for drone to land before exiting...")
+                    _seen_land_mode = False  # Grace-period flag: don't check mode until FC confirms LAND
                     while True:
                         self.flight.poll_heartbeat()
                         alt = self.flight.poll_relative_alt()
+                        mode = self.flight.get_flight_mode()
+
+                        # Track whether the FC has actually entered LAND mode yet.
+                        # This avoids a race condition where send_land() was just sent
+                        # but the FC hasn't switched away from GUIDED yet.
+                        if mode == "LAND":
+                            _seen_land_mode = True
+
+                        # Only exit early once we have confirmed LAND mode at least once.
+                        # If the pilot then changes to something else, they took back control.
+                        if _seen_land_mode and mode != "LAND" and mode != "UNKNOWN":
+                            print(f"Mode changed from LAND to {mode} — "
+                                  "pilot took manual control. Restarting service...")
+                            sys.exit(1)  # Non-zero exit → systemd Restart=on-failure triggers
+
                         if alt is not None and alt < 0.5:
                             print(f"Drone on ground (alt={alt:.1f}m). Shutting down.")
                             break
@@ -184,6 +201,7 @@ class MissionController:
                             print(f"  Landing... altitude: {alt:.1f}m")
                         time.sleep(1.0)
                     break  # Exit the main while loop → triggers cleanup below
+
 
                 elif not self._stream_land_command_sent:
                     # Still in the hover window: try to reconnect and keep the drone stopped
@@ -224,21 +242,35 @@ class MissionController:
                             self._hover_alt_min = current_alt
                             self._hover_alt_max = current_alt
                         elif (time.time() - self._hover_start_time) >= self.config.mission_behavior.hover_stability_time_s:
-                            print("Stable hover detected. Auto-starting mission and switching to GUIDED mode.")
-                            self.flight.set_flight_mode("GUIDED")
-                            self._mission_state = "TRACKING"
+                            print("Stable hover detected. Waiting for pilot to switch to GUIDED mode to start mission.")
+                            self._mission_state = "WAITING_GUIDED"
                 else:
                     self._hover_start_time = None
 
+            elif self._mission_state == "WAITING_GUIDED":
+                # Return to WAITING_TAKEOFF if the drone descends or disarms while waiting
+                if not self.flight.is_armed() or current_alt is None or current_alt < self.config.mission_behavior.min_takeoff_alt_m:
+                    print("Drone descended or disarmed while waiting for GUIDED. Returning to WAITING_TAKEOFF.")
+                    self._mission_state = "WAITING_TAKEOFF"
+                    self._hover_start_time = None
+                elif flight_mode == "GUIDED":
+                    print("GUIDED mode detected. Starting mission tracking...")
+                    self._mission_state = "TRACKING"
+
             elif self._mission_state == "TRACKING":
-                if flight_mode != "GUIDED" and flight_mode != "UNKNOWN":
+                # Only detect manual mode overrides when the video stream is healthy.
+                # If the stream is lost the system is already handling landing; ignoring
+                # mode changes here prevents the state machine from entering PAUSED and
+                # getting stuck in a broken state after the pilot tries to intervene.
+                if self._stream_lost_time is None and flight_mode != "GUIDED" and flight_mode != "UNKNOWN":
                     print(f"Manual override detected (Mode changed to {flight_mode}). Pausing mission.")
                     self._mission_state = "PAUSED"
                     # Reset tracking memory to drop target when paused
                     self._reset_tracking_memory()
 
             elif self._mission_state == "PAUSED":
-                if flight_mode == "GUIDED":
+                # Same guard: only resume when the stream is healthy.
+                if self._stream_lost_time is None and flight_mode == "GUIDED":
                     print("Mode switched back to GUIDED. Resuming mission.")
                     self._mission_state = "TRACKING"
 
@@ -249,6 +281,10 @@ class MissionController:
                 cv2.putText(frame, f"State: {self._mission_state}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                 if current_alt is not None:
                     cv2.putText(frame, f"Alt: {current_alt:.1f}m", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                # When stable hover is confirmed, prompt the pilot to switch mode manually
+                if self._mission_state == "WAITING_GUIDED":
+                    cv2.putText(frame, "Switch to GUIDED to start mission",
+                                (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
                 self._stream(frame)
 
         self.camera.release()

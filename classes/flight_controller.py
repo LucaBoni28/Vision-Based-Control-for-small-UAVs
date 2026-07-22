@@ -8,6 +8,9 @@
 from dataclasses import dataclass
 from typing import Optional
 
+import select
+import socket
+import errno
 import time
 from pymavlink import mavutil
 
@@ -102,30 +105,24 @@ class FlightController:
                 if msg.get_type() == "ATTITUDE":
                     self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw)
 
-        if self.telemetry_output and self._config.sitl:
-            # Prevent "EOF on TCP socket" spam by detecting dead sockets early
-            is_dead = False
-            if hasattr(self.telemetry_output, 'port') and hasattr(self.telemetry_output.port, 'fileno'):
-                try:
-                    if self.telemetry_output.port.fileno() == -1:
-                        is_dead = True
-                except Exception:
-                    is_dead = True
-
-            if is_dead:
-                print("[WARNING] Telemetry output connection closed by peer.")
-                try:
-                    self.telemetry_output.close()
-                except:
-                    pass
-                self.telemetry_output = None
+        if self.telemetry_output:
+            # Before draining, check if the TCP socket has hit EOF.
+            # pymavlink's handle_eof() calls reconnect() which is a no-op when
+            # autoreconnect=False, so NO exception is ever raised — recv_match()
+            # just silently returns None forever on a dead socket.
+            # We detect this with select(): if the fd is readable but recv_match
+            # returns no message, the remote end closed the connection.
+            if self._is_telemetry_dead():
+                print("[WARNING] Telemetry socket closed by peer (Mission Planner disconnected). "
+                      "Will reconnect when it is available again.")
+                self._close_telemetry()
             else:
                 try:
                     while True:
                         msg = self.telemetry_output.recv_match(blocking=False)
                         if not msg:
                             break
-                        
+
                         if msg.get_type() == "HEARTBEAT":
                             if msg.type not in (mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER):
                                 if not getattr(self, '_sitl_heartbeat_active', False):
@@ -138,13 +135,13 @@ class FlightController:
                                 print(f"SITL ALTITUDE DETECTED! Overriding physical drone (SITL Alt: {msg.relative_alt / 1000.0}m)")
                             self._sitl_alt_active = True
                             self._relative_alt_m = msg.relative_alt / 1000.0
+
+                except (EOFError, ConnectionResetError, OSError) as e:
+                    print(f"[WARNING] Telemetry socket lost ({type(e).__name__}): {e}. Will reconnect when Mission Planner is available.")
+                    self._close_telemetry()
                 except Exception as e:
-                    print(f"[WARNING] Telemetry receive error: {e}")
-                    try:
-                        self.telemetry_output.close()
-                    except:
-                        pass
-                    self.telemetry_output = None
+                    print(f"[WARNING] Telemetry receive error ({type(e).__name__}): {e}. Will reconnect.")
+                    self._close_telemetry()
 
     # Polls for a new HEARTBEAT message from the flight controller, updating the stored heartbeat
     def poll_heartbeat(self) -> None:
@@ -155,26 +152,34 @@ class FlightController:
 
         current_time = time.time()
         
-        # Automatically try to reconnect telemetry output if it was lost and we are in SITL
-        if self._config.sitl and self.telemetry_output is None:
+        # Automatically try to reconnect telemetry output if it was lost
+        # (applies to both SITL/TCP and real-drone/UDP modes)
+        if self.telemetry_output is None:
             if not hasattr(self, '_last_telemetry_reconnect') or current_time - getattr(self, '_last_telemetry_reconnect') > 5.0:
                 self._last_telemetry_reconnect = current_time
+                print(f"[TELEMETRY] Attempting to reconnect to {self._config.telemetry_output}...")
                 try:
                     self.telemetry_output = mavutil.mavlink_connection(
                         self._config.telemetry_output,
                         source_system=self._config.source_system,
-                        source_component=self._config.source_component, 
+                        source_component=self._config.source_component,
                     )
-                    print(f"Telemetry output reconnected to {self._config.telemetry_output}")
-                    # Re-request position from the simulation
-                    self.telemetry_output.mav.request_data_stream_send(
-                        1, 1, 
-                        mavutil.mavlink.MAV_DATA_STREAM_POSITION,
-                        self._config.attitude_stream_rate_hz,
-                        1,
-                    )
-                except Exception:
-                    pass # Silently fail until Mission Planner is back up
+                    print(f"[TELEMETRY] Reconnected to {self._config.telemetry_output}. Waiting for heartbeat...")
+                    # Reset SITL override flags — we need a fresh heartbeat/position
+                    # from the new session before trusting its data again
+                    self._sitl_heartbeat_active = False
+                    self._sitl_alt_active = False
+                    if self._config.sitl:
+                        # Re-request position stream from the SITL simulation
+                        self.telemetry_output.mav.request_data_stream_send(
+                            1, 1,
+                            mavutil.mavlink.MAV_DATA_STREAM_POSITION,
+                            self._config.attitude_stream_rate_hz,
+                            1,
+                        )
+                except Exception as e:
+                    print(f"[TELEMETRY] Reconnection attempt failed ({e}). Will retry in 5s.")
+                    self.telemetry_output = None  # Ensure it stays None so next retry triggers
                     
         # Send our own companion computer heartbeat at 1Hz continuously
         if current_time - self._last_heartbeat_sent > 1.0:
@@ -192,11 +197,7 @@ class FlightController:
                     )
                 except Exception as e:
                     print(f"[WARNING] Failed to send telemetry heartbeat: {e}")
-                    try:
-                        self.telemetry_output.close()
-                    except:
-                        pass
-                    self.telemetry_output = None
+                    self._close_telemetry()
                     
             self._last_heartbeat_sent = current_time
 
@@ -258,6 +259,46 @@ class FlightController:
     def poll_relative_alt(self) -> float:
         self.update()
         return self._relative_alt_m
+
+    # Closes the telemetry output connection and resets related state flags
+    def _close_telemetry(self) -> None:
+        try:
+            self.telemetry_output.close()
+        except Exception:
+            pass
+        self.telemetry_output = None
+        # Reset SITL override flags so the physical Pixhawk data is used as fallback
+        self._sitl_heartbeat_active = False
+        self._sitl_alt_active = False
+
+    # Returns True if the telemetry socket has hit EOF (remote peer closed connection).
+    # pymavlink's mavtcp.handle_eof() calls reconnect() which is a no-op when
+    # autoreconnect=False, so no exception is ever raised — recv_match() silently
+    # returns None forever on a dead socket. We use select() + MSG_PEEK to detect
+    # this: if the fd is readable but a peek yields 0 bytes, the connection is gone.
+    def _is_telemetry_dead(self) -> bool:
+        try:
+            port = getattr(self.telemetry_output, 'port', None)
+            if port is None:
+                return True  # port was already closed by pymavlink's failed reconnect
+            fd = port.fileno()
+            if fd == -1:
+                return True  # file descriptor already closed
+            readable, _, _ = select.select([port], [], [], 0)
+            if readable:
+                # Peek 1 byte without consuming it from the kernel buffer.
+                # Empty peek → EOF. EAGAIN/EWOULDBLOCK → alive but no data yet.
+                try:
+                    data = port.recv(1, socket.MSG_PEEK)
+                    if len(data) == 0:
+                        return True  # EOF confirmed
+                except socket.error as e:
+                    if e.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                        return False  # No data right now, socket is healthy
+                    return True  # Any other socket error → treat as dead
+        except Exception:
+            return True
+        return False
 
 
     # Sends a velocity command to the flight controller in the body frame, with the specified velocities in m/s and yaw rate in rad/s

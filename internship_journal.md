@@ -124,3 +124,38 @@ This journal is used to track daily progress, challenges, and solutions to help 
       This wire connects the Python script (1:191) to the Pixhawk (1:1). When we want the drone to move, we send `mav.set_position_target_local_ned_send` over this wire, specifically addressed to **Target 1:1**. The Pixhawk reads it and executes the movement.
   *   **`telemetry_output` Connection (Jetson <--> PC/Mission Planner)**
       This wire is a direct TCP tunnel between the Python script (1:191) and Mission Planner (255:190). Because we want to visualize the velocities in Mission Planner, the Python script sends a *copy* of the velocity command over this wire. By addressing the copy to **Target 0:0** (Broadcast), Mission Planner happily receives it and displays it in the MAVLink inspector under the Jetson's identity (Source 1:191). Additionally, the Jetson must send `HEARTBEAT` messages over this link to prevent Mission Planner from marking the `1:191` component as disconnected.
+
+---
+
+## Week 3 (July 20 - July 26, 2026)
+
+### 🎯 Weekly Goals
+- [x] Analyze flight controller communication sequence.
+- [ ] Prepare for upcoming flight tests.
+
+### 📝 Daily Log
+
+#### Monday, July 20
+- **Flight Controller Communication Analysis**: Conducted a deep dive into the MAVLink connection sequence inside `flight_controller.py`. Specifically mapped out the control flow immediately following a successful heartbeat from the physical drone:
+  1. The system attempts to establish a secondary `telemetry_output` connection for Ground Station/SITL routing.
+  2. It explicitly requests the `MAV_DATA_STREAM_EXTRA1` message stream from the physical drone at the configured `attitude_stream_rate_hz` to receive continuous roll, pitch, and yaw updates.
+  3. If SITL simulation is enabled (`self._config.sitl`), it separately requests the `MAV_DATA_STREAM_POSITION` stream from the telemetry connection, bypassing the physical drone's GPS/Barometer to rely purely on simulated altitude/position data.
+- **Dynamic Telemetry Routing Refactoring**: Refactored `config.py` and `config.yaml` to dynamically generate the `telemetry_output` connection string. It now uses a centralized `ground_station_ip` property alongside the `sitl` flag to automatically construct either a TCP connection (`tcp:{ip}:5762` for SITL) or a UDP broadcast (`udpout:{ip}:14560` for standard telemetry).
+
+#### Tuesday, July 21
+- **Configuration Documentation**: Added comprehensive descriptions to parameters in `config.yaml` to clarify the purpose and impact of camera settings, MAVLink connections, tracker configurations, and PID control values.
+- **Drone Automation & Safety Logic**: Implemented robust safety preconditions for mission initialization in `mission_controller.py` and `flight_controller.py`. The control loop will now only start if the drone is in GUIDED mode and has been stably hovering at an altitude over 3 meters for at least 3 seconds.
+- **SITL Telemetry Stability**: Improved the secondary MAVLink connection (`telemetry_output`) handling in `flight_controller.py`. Added logic to detect dead TCP sockets to prevent terminal spam (`EOF on TCP socket`) when Mission Planner is closed. Implemented a 5-second auto-reconnect loop so the Python script can seamlessly resume telemetry and position syncing as soon as Mission Planner is restarted.
+- **Override Log Refinement**: Reworded the log message in `mission_controller.py` from "Emergency stop" to "Manual override detected" when a flight mode change pauses the mission, accurately reflecting that the system is simply yielding control back to the operator rather than triggering an emergency fail-safe.
+
+#### Thursday, July 23
+- **Headless & Auto-Start Configuration Documentation**: Added configuration instructions in `README.md` referencing systemd configuration for screenless and internet-free auto-starting. Highlighted the role of `fake-hwclock` (crucial for Tailscale startup when offline) and setting up udev rules to prevent `ModemManager` from locking the `/dev/ttyUSB0` serial line.
+- **Interactive Mission Start & Pilot Control**: Refactored the takeoff/mission transition flow to improve safety. Instead of automatically commanding GUIDED mode upon detecting a stable hover, the controller now displays a status prompt to the pilot ("Switch to GUIDED to start mission") and enters a `WAITING_GUIDED` state. The controller begins tracking only after the pilot manually toggles the mode switch.
+- **Flight Mode Safety Logic & Error Handling**:
+  - Implemented fallbacks: if the drone descends below minimum takeoff altitude or disarms during the `WAITING_GUIDED` state, the mission controller reverts to `WAITING_TAKEOFF`.
+  - Guarded tracking/paused override logic to ignore flight mode changes if the video stream is lost, preventing the state machine from getting stuck in `PAUSED` when a landing sequence is already active.
+  - Refined the landing loop to detect when the pilot manually takes back control (switching out of `LAND` mode to a non-unknown mode after landing mode is active), causing the mission controller to exit with code `1` to trigger a clean `systemd` restart.
+- **Robust Telemetry EOF Detection & Reconnection**: Improved TCP/UDP telemetry reconnection by implementing low-level socket checks (`select` + `MSG_PEEK` to test for socket EOF / TCP disconnect) to prevent `recv_match` from silently hanging. Expanded the 5-second auto-reconnection logic to handle all telemetry configurations, resetting SITL override flags during reconnection to prevent stale state usage.
+
+### 💡 Notes for Final Report
+- **Control Law Architecture & Coupled Velocity Limiting**: A critical detail for the thesis is the final control logic implemented in `mission_controller.py`. While the Python simulator (built in Week 1) was used to test SMC and PID, the actual edge deployment utilizes a multi-axis **PD Controller**. A vital safety and tracking feature is the **Coupled Forward Velocity Limiter** (`v_x_limit`). The system continuously monitors the visual centering error (`e_mag`). If the target is outside a defined safe radius (`r_stop = 0.8`), the drone zeroes its forward velocity (`v_x = 0`). As the drone yaws to re-center the target, the forward velocity limit quadratically increases (`1 - e_scaled**2`). This ensures the drone *prioritizes rotating to face the target* before it is allowed to physically approach it, preventing fly-bys. Action deadzones (`yaw_deadzone`, `vz_deadzone`, `area_deadzone`) were also added to eliminate micro-oscillations caused by bounding box pixel-jitter.

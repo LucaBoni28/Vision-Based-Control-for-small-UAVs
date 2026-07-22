@@ -98,6 +98,11 @@ Once the ground station client is running and listening, execute the main script
 python main.py
 ```
 
+### Headless / Boot Auto-Start Setup (For Demos)
+To run the telemetry router and the mission code automatically at boot without a screen, keyboard, mouse, or internet:
+1. Refer to the [systemd README](file:///home/rtd/luca_boni/yolov26/systemd/README.md) for full setup instructions.
+2. It includes guides on setting up `fake-hwclock` (critical for Tailscale offline startup) and configuring `ModemManager` udev rules so it doesn't conflict with the flight controller `/dev/ttyUSB0` serial line.
+
 ---
 
 ## Hardware Requirements
