@@ -8,8 +8,9 @@ This journal is used to track daily progress, challenges, and solutions to help 
 ## Week 1 (July 6 - July 12, 2026)
 
 ### 🎯 Weekly Goals
-- [ ] Define control logic improvements
-- [ ] 
+- [x] Restructure codebase into a modular OOP architecture.
+- [x] Implement target selection logic and live calibration preview.
+- [x] Develop a 2D Kinematic Drone Simulator for control logic validation.
 
 ### 📝 Daily Log
 
@@ -39,8 +40,8 @@ This journal is used to track daily progress, challenges, and solutions to help 
 - Already verified the setup using an Ethernet connection, and it works successfully.
 
 ### 💡 Notes for Final Report
-*Jot down architectural decisions, key learnings, or figures you might want to include in the LaTeX report later.*
-- 
+- **OOP Refactoring Benefits**: Transitioning from linear scripting to a modular OOP architecture (`CameraSource`, `Detector`, `Tracker`, `FlightController`, `MissionController`) decoupled vision processing from flight control. This separation of concerns allows hot-swapping vision backends (e.g. switching from CPU PyTorch to TensorRT ONNX) or switching from a physical camera stream to simulated inputs without altering any control logic.
+- **Simulator-in-the-Loop Validation**: Developing a standalone simulator prior to hardware integration was critical. It allowed validation of control laws (PD/SMC) against simulated physical lag and tracking error before dealing with flight controller EKF constraints.
 
 ---
 
@@ -85,9 +86,6 @@ This journal is used to track daily progress, challenges, and solutions to help 
   - **Command Mirroring**: Modified `flight_controller.py` so that `send_velocity()` (sending `SET_POSITION_TARGET_LOCAL_NED`) and `send_land()` are mirrored to both the physical drone and the SITL connection. This allows the simulated drone in Mission Planner to physically move in response to the script's commands.
   - **Altitude Hijacking**: Upgraded the `poll_relative_alt()` method to request the `MAV_DATA_STREAM_POSITION` stream from the SITL connection as well. It now aggressively drains the message buffer of the `telemetry_output` socket using `recv_match(type="GLOBAL_POSITION_INT", blocking=False)` in a `while True` loop to ensure we always have the freshest data without lag. If it successfully reads a simulated altitude, it sets a persistent flag (`_sitl_alt_active = True`). From that point forward, the script completely ignores the physical drone's `0m` altitude and bases all landing checks on the SITL's altitude. This allows the entire 5-second hover and descent sequence to be verified visually and safely in the Mission Planner simulator.
   - **Recovery Validation**: Tested and verified that if the video stream drops but is manually restarted *before* the 5-second hover timeout expires, the system successfully aborts the landing sequence and seamlessly resumes normal flight tracking.
-#### Thursday
-- 
-
 #### Friday, July 17
 - **Mission Planner Telemetry Integration**: Successfully configured the system to make velocity commands (`SET_POSITION_TARGET_LOCAL_NED`) permanently visible in the Mission Planner MAVLink inspector.
 - **MAVLink Routing Fixes**: Identified that Mission Planner drops point-to-point commands addressed to the autopilot. Solved this by configuring the `telemetry_output` connection to broadcast the velocity commands (`target_system=0`, `target_component=0`), ensuring Mission Planner receives and displays them without the physical drone executing them twice.
@@ -131,7 +129,7 @@ This journal is used to track daily progress, challenges, and solutions to help 
 
 ### 🎯 Weekly Goals
 - [x] Analyze flight controller communication sequence.
-- [ ] Prepare for upcoming flight tests.
+- [x] Prepare for upcoming flight tests.
 
 ### 📝 Daily Log
 
