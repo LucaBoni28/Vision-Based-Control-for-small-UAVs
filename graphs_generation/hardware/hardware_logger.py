@@ -23,7 +23,7 @@ with jtop() as jetson:
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
             # Define the CSV headers
-            writer.writerow(['Time_Sec', 'GPU_Util_%', 'CPU_Util_%', 'RAM_Usage_%', 'Power_TOT_mW'])
+            writer.writerow(['Time_Sec', 'GPU_Util_%', 'GPU_Freq_MHz', 'CPU_Util_%', 'RAM_Usage_%', 'Power_TOT_mW'])
             
             start_time = time.time()
             
@@ -32,8 +32,22 @@ with jtop() as jetson:
                     current_time = time.time() - start_time
                     
                     # Extract the metrics (jtop handles the low-level Tegra API calls)
-                    # Note: stats keys might vary slightly by Jetpack version, these are standard for Orin
-                    gpu = jetson.stats.get('GPU', 0)
+                    # GPU: use jetson.gpu property for reliable TensorRT/CUDA utilization
+                    gpu = 0
+                    gpu_freq_mhz = 0
+                    try:
+                        gpu_info = jetson.gpu
+                        for gpu_name, gpu_data in gpu_info.items():
+                            if isinstance(gpu_data, dict):
+                                gpu = gpu_data.get('load', gpu_data.get('val', 0))
+                                freq = gpu_data.get('freq', {})
+                                if isinstance(freq, dict):
+                                    gpu_freq_mhz = freq.get('cur', 0) / 1000  # kHz -> MHz
+                                elif isinstance(freq, (int, float)):
+                                    gpu_freq_mhz = freq / 1000
+                                break
+                    except (AttributeError, TypeError, KeyError):
+                        gpu = jetson.stats.get('GPU', 0)
                     
                     # Calculate average CPU usage across all cores
                     cpu_cores = [jetson.stats.get(f'CPU{i}', 0) for i in range(1, 9) if f'CPU{i}' in jetson.stats]
@@ -43,7 +57,7 @@ with jtop() as jetson:
                     power = jetson.stats.get('Power TOT', 0) # Total board power consumption
                     
                     # Log to CSV
-                    writer.writerow([f"{current_time:.1f}", gpu, f"{cpu_avg:.1f}", ram, power])
+                    writer.writerow([f"{current_time:.1f}", gpu, f"{gpu_freq_mhz:.0f}", f"{cpu_avg:.1f}", ram, power])
                     
                     # Force write to disk so data isn't lost if you abruptly kill the script
                     f.flush() 
