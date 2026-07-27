@@ -9,10 +9,13 @@ from jtop import jtop
 import csv
 import time
 import sys
+import os
 
 # Pass the algorithm name from the terminal to name the file
-algorithm_name = sys.argv[1] if len(sys.argv) > 1 else "benchmark"
-filename = f"{algorithm_name}_hardware_stats.csv"
+algorithm_name = sys.argv[1] if len(sys.argv) > 1 else "combined"
+output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(output_dir, exist_ok=True)
+filename = os.path.join(output_dir, f"{algorithm_name}_hardware_stats.csv")
 
 print(f"Initializing Jetson Hardware Logger for: {algorithm_name}")
 print("Press Ctrl+C to stop recording.")

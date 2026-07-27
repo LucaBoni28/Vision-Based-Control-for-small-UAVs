@@ -14,7 +14,7 @@ from ultralytics import YOLO
 import numpy as np
 import sys
 import select
-# from deep_sort_realtime.deepsort_tracker import DeepSort
+from deep_sort_realtime.deepsort_tracker import DeepSort
 from pymavlink import mavutil
 import argparse
 from graphs_generation.thesis_logger import ThesisLogger
@@ -24,8 +24,8 @@ script_start_time = time.time()
 
 # Parse test mode from command line (optional — no flags = normal operation)
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument('--test', choices=['benchmark', 'distance'], default=None,
-                    help='Enable CSV logging: benchmark (Ch.4) or distance (Ch.6)')
+parser.add_argument('--test', choices=['combined'], default=None,
+                    help='Enable CSV logging: combined (Ch.4 and Ch.6 merged)')
 parser.add_argument('--tracker', default='bytetrack',
                     help='Tracker name for benchmark CSV filename')
 args, _ = parser.parse_known_args()
@@ -72,14 +72,14 @@ model = YOLO('yolo26n.engine', task='detect')
 
 # Initialize the Custom Tracker (The Visual Memory + Physics Engine)
 MAX_TIMEOUT = 50   
-# tracker = DeepSort(
-#     max_age=MAX_TIMEOUT,              # Memory your X and Y coordinate pairs duration: Remembers a lost object for max_age frames
-#     embedder="mobilenet",     # The micro-network uses to extract the visual fingerprint
-#     half=False,                # Uses FP16 precision to optimize Orin NX Tensor Cores
-#     max_cosine_distance=0.8,  # Higher value allows for lighting/shadow changes
-#     n_init=1,                 # Lock onto target immediately after 1 frame
-#     max_iou_distance=0.8,     # Allows object to move fast between frames
-# )
+tracker = DeepSort(
+    max_age=MAX_TIMEOUT,              # Memory your X and Y coordinate pairs duration: Remembers a lost object for max_age frames
+    embedder="mobilenet",     # The micro-network uses to extract the visual fingerprint
+    half=False,                # Uses FP16 precision to optimize Orin NX Tensor Cores
+    max_cosine_distance=0.8,  # Higher value allows for lighting/shadow changes
+    n_init=1,                 # Lock onto target immediately after 1 frame
+    max_iou_distance=0.8,     # Allows object to move fast between frames
+)
 
 # Setting GStreamer pipeline to pull raw data from the CSI Camera
 gst_pipeline = (
@@ -124,7 +124,7 @@ prev_time_fps = 0
 # calibration_areas = []          # Array to store the data
 # CALIBRATION_SAMPLES = 100       # Number of frames
 OPTICAL_CONSTANT = 75000*(1.5)**2    
-DESIRED_STOPPING_DISTANCE = 0.6   # [m]
+DESIRED_STOPPING_DISTANCE = 0.7   # [m]
 TARGET_AREA = OPTICAL_CONSTANT / (DESIRED_STOPPING_DISTANCE**2)             # Default value
 
 frame_number = 0
@@ -148,119 +148,116 @@ while cap.isOpened():
     fps = 1.0 / (current_time - prev_time_fps)
     prev_time_fps = current_time
 
-    # YOLO finds the object independently of tracking
-    # class 0 = person, class 62 = monitor
-    # results = model.predict(frame, classes=[62], conf=0.65, verbose=False)
-    
-    # # Preparation of the data for DeepSORT
-    # bbs_expected_by_tracker = []
-    # for box in results[0].boxes:
-    #     # Extract raw floating-point tensors from YOLO
-    #     raw_x1, raw_y1, raw_x2, raw_y2 = box.xyxy[0].cpu().numpy()
-        
-    #     # Clamping coordinates to physical image boundaries to 
-    #     # prevents sending negative pixels to MobileNet, which corrupts the Re-ID.
-    #     x1 = max(0, int(raw_x1))
-    #     y1 = max(0, int(raw_y1))
-    #     x2 = min(img_w, int(raw_x2))
-    #     y2 = min(img_h, int(raw_y2))
-        
-    #     # Filter out garbage artifacts or impossibly small boxes at the screen edges
-    #     w = x2 - x1
-    #     h = y2 - y1
-    #     if w < 20 or h < 20:
-    #         continue
-            
-    #     conf = box.conf[0].item()
-    #     cls = int(box.cls[0].item())
-        
-    #     # Package into the strict list format required by DeepSORT
-    #     bbs_expected_by_tracker.append(([x1, y1, w, h], conf, cls))
-
-    # # 1. Cropping the image to the bounding box
-    # # 2. Running MobileNet to extract the visual fingerprint (Cosine Distance)
-    # # 3. Running the Kalman Filter to predict kinematics
-    # tracks = tracker.update_tracks(bbs_expected_by_tracker, frame=frame)
-
     t_before_track = time.time()
-    results = model.track(
-        frame,
-        classes=[62],
-        conf=0.65,
-        persist=True,
-        tracker="bytetrack.yaml", #botsort.yaml
-        verbose=False
-    )
-    t_after_track = time.time()
+    
+    detected_targets = []
+    
+    if args.tracker == 'deepsort':
+        results = model.predict(frame, classes=[62], conf=0.65, verbose=False)
+        
+        # Preparation of the data for DeepSORT
+        bbs_expected_by_tracker = []
+        for box in results[0].boxes:
+            raw_x1, raw_y1, raw_x2, raw_y2 = box.xyxy[0].cpu().numpy()
+            
+            x1 = max(0, int(raw_x1))
+            y1 = max(0, int(raw_y1))
+            x2 = min(img_w, int(raw_x2))
+            y2 = min(img_h, int(raw_y2))
+            
+            w = x2 - x1
+            h = y2 - y1
+            if w < 20 or h < 20:
+                continue
+                
+            conf = box.conf[0].item()
+            cls = int(box.cls[0].item())
+            bbs_expected_by_tracker.append(([x1, y1, w, h], conf, cls))
+            
+        tracks = tracker.update_tracks(bbs_expected_by_tracker, frame=frame)
+        t_after_track = time.time()
+        
+        for track in tracks:
+            if not track.is_confirmed() or track.time_since_update > 2:
+                continue
+            ltrb = track.to_ltrb() 
+            detected_targets.append((track.track_id, ltrb[0], ltrb[1], ltrb[2], ltrb[3]))
+            
+    else:
+        # ByteTrack or BotSORT
+        tracker_yaml = f"{args.tracker}.yaml"
+        results = model.track(
+            frame,
+            classes=[62],
+            conf=0.65,
+            persist=True,
+            tracker=tracker_yaml,
+            verbose=False
+        )
+        t_after_track = time.time()
+        
+        if results[0].boxes.id is not None:
+            boxes = results[0].boxes.xyxy.cpu().numpy()
+            track_ids = results[0].boxes.id.int().cpu().numpy()
+            for box, track_id in zip(boxes, track_ids):
+                detected_targets.append((track_id, box[0], box[1], box[2], box[3]))
 
     target_found_this_frame = False
     _log_track_id = -1
     _log_bbox_x = 0
     _log_bbox_y = 0
+    _log_A_real = 0
+    _log_Distance_Est = 0.0
+    _log_v_x = 0.0
+    _log_v_z = 0.0
+    _log_omega_z = 0.0
+    _log_pitch_rad = 0.0
+    _log_pipeline_latency_ms = 0.0
     
-    # # Control logic loop and visualization
-    # for track in tracks:
-    #     if not track.is_confirmed():
-    #         continue
+    # Control logic loop and visualization
+    for target in detected_targets:
+        track_id, x1, y1, x2, y2 = target
+
+        # Grab the first confirmed object we see
+        if locked_id is None:
+            locked_id = track_id
+            print(f"LOCKED ONTO TARGET ID: {locked_id}")
             
-    #     # Ignore the "ghost" box, when YOLO doesn't see the object in 2 frames
-    #     if track.time_since_update > 2:
-    #         continue    
-        
-    #     track_id = track.track_id 
+        # Error calculation for only the locked target
+        if track_id == locked_id:
+            target_found_this_frame = True
+            timeout_frames = 0 # Reset the memory decay timer
 
-    if results[0].boxes.id is not None:
+            msg = master.recv_match(type='ATTITUDE', blocking=False)
+            if msg:
+                current_pitch_rad = msg.pitch
+                # current_pitch_rad = math.radians(-15)
+                        
+            # Calculate the current physical center of the target
+            bb_center_x = int((x1 + x2) / 2)
+            bb_center_y = int((y1 + y2) / 2)
+            _log_track_id = int(track_id)
+            _log_bbox_x = bb_center_x
+            _log_bbox_y = bb_center_y
+            
+            # Calculate the mathematical offset from the camera's true center
+            error_x = bb_center_x - CENTER_X  
+            error_y = bb_center_y - CENTER_Y 
+            
+            print(f"ID: {track_id} | Err X: {error_x:6.2f} | Err Y: {error_y:6.2f}")
+            
+            # Error normalization in range [-1,1]
+            e_x = error_x / CENTER_X
+            e_y = error_y / CENTER_Y
+            e_y_compensated = e_y - math.tan(current_pitch_rad)
 
-        boxes = results[0].boxes.xyxy.cpu().numpy()
-        track_ids = results[0].boxes.id.int().cpu().numpy()
+            # Calculate the error magnitude
+            e_mag = math.sqrt(e_x**2 + e_y_compensated**2)
+            e_mag = min(1.0, e_mag)
 
-        for box, track_id in zip(boxes, track_ids):
-
-            # Grab the first confirmed object we see
-            if locked_id is None:
-                locked_id = track_id
-                print(f"LOCKED ONTO TARGET ID: {locked_id}")
-                
-            # Error calculation for only the locked target
-            if track_id == locked_id:
-                target_found_this_frame = True
-                timeout_frames = 0 # Reset the memory decay timer
-                
-                # # Extract the stabilized, filtered bounding box from DeepSORT
-                # ltrb = track.to_ltrb() 
-                # x1, y1, x2, y2 = ltrb
-                x1, y1, x2, y2 = box
-
-                msg = master.recv_match(type='ATTITUDE', blocking=False)
-                if msg:
-                    current_pitch_rad = msg.pitch
-                    # current_pitch_rad = math.radians(-15)
-                            
-                # Calculate the current physical center of the target
-                bb_center_x = int((x1 + x2) / 2)
-                bb_center_y = int((y1 + y2) / 2)
-                _log_track_id = int(track_id)
-                _log_bbox_x = bb_center_x
-                _log_bbox_y = bb_center_y
-                
-                # Calculate the mathematical offset from the camera's true center
-                error_x = bb_center_x - CENTER_X  
-                error_y = bb_center_y - CENTER_Y 
-                
-                print(f"ID: {track_id} | Err X: {error_x:6.2f} | Err Y: {error_y:6.2f}")
-                
-                # Error normalization in range [-1,1]
-                e_x = error_x / CENTER_X
-                e_y = error_y / CENTER_Y
-                e_y_compensated = e_y - math.tan(current_pitch_rad)
-
-                # Calculate the error magnitude
-                e_mag = math.sqrt(e_x**2 + e_y_compensated**2)
-                e_mag = min(1.0, e_mag)
-
-                # Calculate the delta t
-                current_time = time.time()
-                dt = current_time - prev_time
+            # Calculate the delta t
+            current_time = time.time()
+            dt = current_time - prev_time
 
             # Calculate the derivative
             if 0 < dt < 0.5:
@@ -327,18 +324,13 @@ while cap.isOpened():
             )
             t_after_mavlink = time.time()
 
-            # Distance test logging (Chapter 6)
-            if logger and args.test == "distance" and track_id == locked_id:
-                logger.log(
-                    Time_Sec=round(t_frame_capture - script_start_time, 3),
-                    A_real=current_area,
-                    Distance_Est=round(distance_estimate, 4),
-                    v_x=round(v_x, 4),
-                    v_z=round(v_z, 4),
-                    omega_z=round(omega_z, 4),
-                    current_pitch_rad=round(current_pitch_rad, 6),
-                    Pipeline_Latency_ms=round((t_after_mavlink - t_frame_capture) * 1000, 1),
-                )
+            _log_A_real = current_area
+            _log_Distance_Est = distance_estimate
+            _log_v_x = v_x
+            _log_v_z = v_z
+            _log_omega_z = omega_z
+            _log_pitch_rad = current_pitch_rad
+            _log_pipeline_latency_ms = (t_after_mavlink - t_frame_capture) * 1000
 
             # Update the memory states
             prev_error_y = e_y_compensated
@@ -351,15 +343,23 @@ while cap.isOpened():
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
             cv2.arrowedLine(frame, (CENTER_X, CENTER_Y), (bb_center_x, bb_center_y), (0, 0, 255), 5, tipLength=0.05)
 
-    # Benchmark test logging (Chapter 4) — one row per frame
-    if logger and args.test == "benchmark":
+    # Combined test logging — one row per frame
+    if logger and args.test == "combined":
         logger.log(
             Frame_Number=frame_number,
             Time_Sec=round(t_frame_capture - script_start_time, 3),
             Processing_Time_ms=round((t_after_track - t_before_track) * 1000, 1),
+            FPS=round(fps, 1),
             Object_ID=_log_track_id,
             Bbox_X=_log_bbox_x,
             Bbox_Y=_log_bbox_y,
+            A_real=_log_A_real,
+            Distance_Est=round(_log_Distance_Est, 4),
+            v_x=round(_log_v_x, 4),
+            v_z=round(_log_v_z, 4),
+            omega_z=round(_log_omega_z, 4),
+            current_pitch_rad=round(_log_pitch_rad, 6),
+            Pipeline_Latency_ms=round(_log_pipeline_latency_ms, 1),
         )
 
     # UI Overlay
