@@ -271,8 +271,13 @@ class MissionController:
             elif self._mission_state == "PAUSED":
                 # Same guard: only resume when the stream is healthy.
                 if self._stream_lost_time is None and flight_mode == "GUIDED":
-                    print("Mode switched back to GUIDED. Resuming mission.")
-                    self._mission_state = "TRACKING"
+                    if current_alt is not None and current_alt >= self.config.mission_behavior.min_takeoff_alt_m:
+                        print("Mode switched back to GUIDED. Resuming mission.")
+                        self._mission_state = "TRACKING"
+                    else:
+                        print("Mode switched to GUIDED but altitude is too low. Returning to WAITING_TAKEOFF.")
+                        self._mission_state = "WAITING_TAKEOFF"
+                        self._hover_start_time = None
 
             if self._mission_state == "TRACKING":
                 self._process_frame(frame)

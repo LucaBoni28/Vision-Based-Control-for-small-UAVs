@@ -18,7 +18,7 @@ mavlink:
   source_system: 1                   # MAVLink system ID for companion computer
   source_component: 191              # MAVLink component ID (191 = MAV_COMP_ID_ONBOARD_COMPUTER)
   attitude_stream_rate_hz: 10        # Rate at which to request attitude data from the FC
-  sitl: true                        # Set to true if running with Software In The Loop simulator
+  sitl: false                        # Set to true if running with Software In The Loop simulator
 
 # UDP video streaming to the ground station
 video_link:
