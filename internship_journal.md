@@ -157,3 +157,22 @@ This journal is used to track daily progress, challenges, and solutions to help 
 
 ### 💡 Notes for Final Report
 - **Control Law Architecture & Coupled Velocity Limiting**: A critical detail for the thesis is the final control logic implemented in `mission_controller.py`. While the Python simulator (built in Week 1) was used to test SMC and PID, the actual edge deployment utilizes a multi-axis **PD Controller**. A vital safety and tracking feature is the **Coupled Forward Velocity Limiter** (`v_x_limit`). The system continuously monitors the visual centering error (`e_mag`). If the target is outside a defined safe radius (`r_stop = 0.8`), the drone zeroes its forward velocity (`v_x = 0`). As the drone yaws to re-center the target, the forward velocity limit quadratically increases (`1 - e_scaled**2`). This ensures the drone *prioritizes rotating to face the target* before it is allowed to physically approach it, preventing fly-bys. Action deadzones (`yaw_deadzone`, `vz_deadzone`, `area_deadzone`) were also added to eliminate micro-oscillations caused by bounding box pixel-jitter.
+
+---
+
+## Week 4 (July 27 - August 2, 2026)
+
+### 🎯 Weekly Goals
+- [x] Improve safety during state transitions.
+- [x] Clean up and heavily document the main control logic for the thesis report.
+
+### 📝 Daily Log
+
+#### Monday, July 27
+- **Pause State Altitude Safety Check**: Modified the `PAUSED` state logic in `mission_controller.py`. When the pilot resumes the mission by switching back to `GUIDED` mode, the system now checks if the drone is still above the minimum takeoff altitude. If it is too low (e.g., if the drone was manually landed while paused), it refuses to track and safely falls back to the `WAITING_TAKEOFF` state.
+- **Mission Controller Documentation**: Performed a comprehensive cleanup of `mission_controller.py`. Added extensive inline comments, Python docstrings, and a numbered breakdown of the `_process_frame` PD math logic. This restructuring will make it significantly easier to present and explain the system architecture in the final thesis defense.
+
+#### Wednesday, July 29
+- **MJPEG HTTP Streaming Support**: Integrated a new `MjpegServer` class into `video_streamer.py` and `main.py` which runs a background HTTP server. This allows for low-latency streaming of the drone's camera feed directly to a phone or web browser over a local network.
+- **Initialization Order Fixes**: Refactored the camera and streamer initialization order in `main.py`. The `CSICameraSource` is now initialized last to prevent GStreamer buffer overflow crashes during startup.
+- **Git Repository Recovery**: Successfully recovered the local git repository and uncommitted index changes after a local git object file corruption.
