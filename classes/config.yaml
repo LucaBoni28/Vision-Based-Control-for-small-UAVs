@@ -6,7 +6,7 @@
 camera:
   sensor_id: 0
   width: 1280
-  height: 960
+  height: 720
   framerate: 30
 
 # Connection settings for communicating with the flight controller
@@ -18,12 +18,17 @@ mavlink:
   source_system: 1                   # MAVLink system ID for companion computer
   source_component: 191              # MAVLink component ID (191 = MAV_COMP_ID_ONBOARD_COMPUTER)
   attitude_stream_rate_hz: 10        # Rate at which to request attitude data from the FC
-  sitl: false                        # Set to true if running with Software In The Loop simulator
+  sitl: true                        # Set to true if running with Software In The Loop simulator
 
-# UDP video streaming to the ground station
+# TCP video streaming to the ground station
 video_link:
   host: 100.112.124.116              # IP address to stream video to
-  port: 5005                         # UDP port for video streaming
+  port: 5005                         # TCP port for video streaming
+
+# MJPEG HTTP server — view the stream on any device (phone, browser) at http://<jetson-ip>:<port>
+mjpeg_server:
+  enabled: true                      # Set to false to disable the MJPEG HTTP server
+  port: 8080                         # Port the HTTP server listens on
 
 # Object detection model settings
 model:
@@ -71,9 +76,9 @@ calibration:
 
 # Mission behavior for auto-start and hover detection
 mission_behavior:
-  min_takeoff_alt_m: 2.0           # Altitude (meters) to reach before checking for hover
+  min_takeoff_alt_m: 5.0           # Altitude (meters) to reach before checking for hover
   hover_stability_time_s: 3.0      # How long (seconds) the drone must remain stable
-  hover_stability_threshold_m: 1 # Max altitude variation (meters) allowed to be considered "hovering"
+  hover_stability_threshold_m: 0.5 # Max altitude variation (meters) allowed to be considered "hovering"
 
 # Ground station video stream configuration
 display:

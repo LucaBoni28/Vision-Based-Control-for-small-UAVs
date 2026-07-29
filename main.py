@@ -20,7 +20,7 @@ from ultralytics import YOLO
 from classes.config import AppConfig
 from classes.camera import CSICameraSource
 from classes.flight_controller import FlightController
-from classes.video_streamer import VideoStreamer
+from classes.video_streamer import VideoStreamer, MjpegServer
 from classes.tracker import create_tracker
 from classes.distance_estimator import DistanceEstimator
 from classes.detector import YoloDetector
@@ -34,17 +34,10 @@ def main() -> None:
     # Load the configuration YAML file
     config = AppConfig.load("classes/config.yaml")
 
-    # Initialize the camera source
-    camera = CSICameraSource(config.camera)
-    try:
-        camera.open()
-    except RuntimeError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
-
     # Initialize the flight controller and connect to the drone
     flight = FlightController(config.mavlink)
     flight.connect()
+
 
     # Initialize the YOLO model and tracker
     model = YOLO(config.model.path, task=config.model.task)
@@ -60,22 +53,36 @@ def main() -> None:
     command_receiver = CommandReceiver(config.command_link)
     print(f"Listening for Ground Station commands on UDP port {config.command_link.port}")
 
-    # Initialize the video streamer
+    # Initialize the video streamer (TCP, to ground station)
     streamer = VideoStreamer(config.video_link)
     streamer.connect()
 
+    # Initialize the MJPEG HTTP server (for phone/browser viewing)
+    mjpeg_server = MjpegServer(config.mjpeg_server)
+    mjpeg_server.start()
+
     # Initialize the distance estimator
     distance_estimator = DistanceEstimator(config.calibration)
+
+    # Initialize the camera source (do this last to avoid GStreamer buffer overflow)
+    camera = CSICameraSource(config.camera)
+    try:
+        camera.open()
+    except RuntimeError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
 
     # Create the mission controller and run the mission
     try:
         mission = MissionController(
             config, camera, flight, streamer, tracker, target_selector,
-            distance_estimator, detector, command_receiver
+            distance_estimator, detector, command_receiver,
+            mjpeg_server=mjpeg_server,
         )
         mission.run()
     finally:
         command_receiver.close()
+        mjpeg_server.stop()
 
 # Run the main function if this script is executed directly
 if __name__ == "__main__":

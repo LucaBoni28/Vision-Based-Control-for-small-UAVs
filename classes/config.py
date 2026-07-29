@@ -55,6 +55,12 @@ class VideoLinkConfig:
     port: int
 
 @dataclass
+class MjpegServerConfig:
+    enabled: bool
+    port: int
+
+
+@dataclass
 class ModelConfig:
     path: str
     task: str
@@ -152,6 +158,7 @@ class AppConfig:
     command_link: CommandLinkConfig
     pitch_compensation: PitchCompensationConfig
     mission_behavior: MissionBehaviorConfig
+    mjpeg_server: MjpegServerConfig
     # Loads the configuration from a YAML file at the given path and returns an AppConfig instance
     @staticmethod
     def load(path: str | Path = "config.yaml") -> "AppConfig":
@@ -185,6 +192,7 @@ class AppConfig:
                 command_link=CommandLinkConfig(**raw["command_link"]),
                 pitch_compensation=PitchCompensationConfig(**raw.get("pitch_compensation", {"mode": "software"})),
                 mission_behavior=MissionBehaviorConfig(**raw["mission_behavior"]),
+                mjpeg_server=MjpegServerConfig(**raw.get("mjpeg_server", {"enabled": False, "port": 8080})),
             )
         except KeyError as e:
             raise ValueError(f"config.yaml is missing required section/key: {e}") from e
