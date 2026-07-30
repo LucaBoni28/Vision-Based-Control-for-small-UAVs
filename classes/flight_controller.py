@@ -139,8 +139,8 @@ class FlightController:
                         )
 
                 if msg.get_type() == "ATTITUDE":
-                    # Always read attitude from master; SITL telemetry_output will override below
-                    self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, yawspeed=msg.yawspeed)
+                    if not getattr(self, '_sitl_attitude_active', False):
+                        self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, yawspeed=msg.yawspeed)
 
         if self.telemetry_output:
             # Before draining, check if the TCP socket has hit EOF.
@@ -183,7 +183,7 @@ class FlightController:
                             )
 
                         if msg.get_type() == "ATTITUDE":
-                            # SITL attitude is authoritative — override physical Pixhawk reading
+                            self._sitl_attitude_active = True
                             self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, yawspeed=msg.yawspeed)
 
                 except (EOFError, ConnectionResetError, OSError) as e:
@@ -374,11 +374,11 @@ class FlightController:
         self.master.mav.set_position_target_local_ned_send(
             0, self.target_system, self.target_component,
             mavutil.mavlink.MAV_FRAME_BODY_NED,
-            0b0000011111000111,  # ignore pos, acc, yaw, yaw_rate — velocity only
+            0b011111000111,  # ignore pos, acc, yaw. use vel, yaw_rate
             0, 0, 0,
             vx, vy, vz,
             0, 0, 0,
-            0, 0,
+            0, yaw_rate,
         )
 
         # Mirror the velocity command to telemetry_output (Mission Planner display)
@@ -387,11 +387,11 @@ class FlightController:
                 self.telemetry_output.mav.set_position_target_local_ned_send(
                     0, 0, 0,  # Target system 0, component 0 (broadcast) so MP accepts it
                     mavutil.mavlink.MAV_FRAME_BODY_NED,
-                    0b0000011111000111,
+                    0b011111000111,
                     0, 0, 0,
                     vx, vy, vz,
                     0, 0, 0,
-                    0, 0,
+                    0, yaw_rate,
                 )
             except Exception:
                 pass  # Don't crash if telemetry link is down

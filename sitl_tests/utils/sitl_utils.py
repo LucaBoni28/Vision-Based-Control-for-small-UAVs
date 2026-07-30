@@ -63,7 +63,7 @@ class CSVLogger:
 def load_config(config_path: str = None) -> AppConfig:
     """Load the application config, defaulting to classes/config.yaml."""
     if config_path is None:
-        project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
         config_path = os.path.join(project_root, "classes", "config.yaml")
     return AppConfig.load(config_path)
 
@@ -128,6 +128,16 @@ def sitl_arm_and_takeoff(flight: FlightController, target_alt: float = 10.0,
         0,  # confirmation
         1, 0, 0, 0, 0, 0, 0
     )
+    if getattr(flight, 'telemetry_output', None):
+        try:
+            flight.telemetry_output.mav.command_long_send(
+                0, 0,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0, 1, 0, 0, 0, 0, 0, 0
+            )
+        except Exception:
+            pass
+
     print("Arm command sent. Waiting for motors...")
     time.sleep(3)
 
@@ -139,6 +149,15 @@ def sitl_arm_and_takeoff(flight: FlightController, target_alt: float = 10.0,
         0,  # confirmation
         0, 0, 0, 0, 0, 0, target_abs_alt
     )
+    if getattr(flight, 'telemetry_output', None):
+        try:
+            flight.telemetry_output.mav.command_long_send(
+                0, 0,
+                mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                0, 0, 0, 0, 0, 0, 0, target_abs_alt
+            )
+        except Exception:
+            pass
     print(f"Takeoff command sent: climbing to {target_abs_alt:.1f}m")
 
     # Wait for altitude
