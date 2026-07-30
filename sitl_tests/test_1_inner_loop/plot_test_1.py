@@ -167,8 +167,6 @@ def plot_test_1(csv_path, output_dir=None):
     ax1.set_ylabel(ylabel, fontsize=12)
     ax1.set_title(f"Test 1: Inner Loop Velocity Tracking — {axis.upper()}", fontsize=14, fontweight='bold')
     ax1.legend(loc="upper right", fontsize=10)
-    ax1.grid(True, alpha=0.3)
-
     # Tracking error
     ax2 = axes[1]
     tracking_error = df[cmd_col].values - df[actual_col].values
@@ -178,7 +176,23 @@ def plot_test_1(csv_path, output_dir=None):
     ax2.set_xlabel("Time (s)", fontsize=12)
     ax2.set_ylabel("Error (m/s)", fontsize=12)
     ax2.set_title("Tracking Error", fontsize=11)
-    ax2.grid(True, alpha=0.3)
+
+    import matplotlib.ticker as ticker
+    for ax in axes:
+        # Increase tick label sizes
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        
+        # Turn on minor ticks and set specific spacing
+        ax.minorticks_on()
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(5.0))  # Major tick every 5s
+        ax.xaxis.set_minor_locator(ticker.MultipleLocator(1.0))  # Minor tick every 1s
+        
+        # Draw dark, clear grids
+        ax.grid(which='major', color='black', alpha=0.4, linewidth=0.8)
+        ax.grid(which='minor', color='gray', alpha=0.3, linestyle='--')
+        
+        # Tighten bounds
+        ax.set_xlim([time_s.min(), time_s.max()])
 
     plt.tight_layout()
 

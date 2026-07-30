@@ -26,9 +26,9 @@ def find_latest_csv(axis=None):
     """Find the most recent Test 2 CSV file."""
     logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
     if axis:
-        pattern = os.path.join(logs_dir, f"test_2_step_response_{axis}.csv")
+        pattern = os.path.join(logs_dir, f"test_2_{axis}.csv")
     else:
-        pattern = os.path.join(logs_dir, "test_2_step_response_*.csv")
+        pattern = os.path.join(logs_dir, "test_2_*.csv")
     files = glob.glob(pattern)
     if not files:
         return None
@@ -114,7 +114,7 @@ def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02):
         "settling_time_s": settling_time_s,
         "overshoot_pct": overshoot_pct,
         "peak_value": peak_value,
-        "peak_time_s": peak_time,
+        "peak_time_since_step_s": peak_time
     }
 
 
@@ -128,10 +128,10 @@ def plot_test_2(csv_path, output_dir=None):
 
     # Determine axis from filename
     basename = os.path.basename(csv_path)
-    if "altitude" in basename:
-        axis = "altitude"
-    elif "distance" in basename:
-        axis = "distance"
+    if "alt" in basename:
+        axis = "alt"
+    elif "dist" in basename:
+        axis = "dist"
     else:
         axis = "yaw"
 
@@ -147,17 +147,23 @@ def plot_test_2(csv_path, output_dir=None):
 
     print(f"Step applied at t = {step_time:.2f}s")
 
-    # ── Figure 1: Error Signals Step Response ───────────────────────────────
+    # ── Figure 1: Summary for the specific axis ───────────────────────────────
     fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=True)
 
     # Define which signals to analyze based on the axis
     if axis == "yaw":
-        primary_signal = "e_x"
-        primary_label = "Horizontal Error (e_x)"
-        primary_cmd = "omega_z_cmd"
-        primary_cmd_label = "Yaw Rate Command (ωz)"
-    elif axis == "altitude":
-        primary_signal = "e_y"
+        err_col, err_label = "e_x", ("Horizontal Error (e_x)", "tab:blue")
+        pos_drone, pos_target, pos_label = "drone_x", "target_x", "North Position (X)"
+        cmd_col, cmd_label = "omega_z_cmd", ("Yaw Rate Cmd (ωz)", "tab:green")
+    elif axis == "alt":
+        err_col, err_label = "e_y", ("Vertical Error (e_y)", "tab:blue")
+        pos_drone, pos_target, pos_label = "drone_z", "target_z", "Down Position (Z)"
+        cmd_col, cmd_label = "vz_cmd", ("Vertical Velocity Cmd (vz)", "tab:green")
+    else: # dist
+        err_col, err_label = "e_area", ("Distance Error (e_area)", "tab:blue")
+        pos_drone, pos_target, pos_label = "drone_y", "target_y", "East Position (Y)"
+        cmd_col, cmd_label = "vx_cmd", ("Forward Velocity Cmd (vx)", "tab:green")
+
     # Create plots directory
     if os.path.basename(output_dir) == "logs":
         plots_dir = os.path.join(os.path.dirname(output_dir), "plots")
@@ -167,103 +173,86 @@ def plot_test_2(csv_path, output_dir=None):
     
     plot_basename = os.path.splitext(basename)[0]
 
-    # ── Figure 1: Control Errors ────────────────────────────────────────────
-    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+    # Subplot 1: Error Signal
+    ax = axes[0]
+    signal = df[err_col].values
+    ax.plot(time_s, signal, color=err_label[1], linewidth=1.5, alpha=0.9, label=err_label[0])
+    ax.axvline(x=step_time, color='red', linestyle='--', alpha=0.4, label="Step Trigger")
+    ax.axhline(y=0, color='black', linestyle='-', alpha=0.2)
+    ax.set_ylabel(err_label[0], fontsize=11)
+    ax.legend(loc="upper right", fontsize=9)
+    ax.set_title(f"Test 2: Step Response — {axis.upper()} Step", fontsize=14, fontweight='bold')
 
-    error_cols = [
-        ("error_x", "Forward Error (X)", "tab:blue"),
-        ("error_y", "Lateral Error (Y)", "tab:orange"),
-        ("error_yaw", "Yaw Error", "tab:green"),
-    ]
+    # Compute metrics for the primary error signal
+    metrics = compute_step_metrics(time_s, signal, step_time)
 
-    all_metrics = {}
+    # Annotate settling time band if available
+    if metrics.get("final_value") is not None and metrics.get("settling_time_s") is not None:
+        fv = metrics["final_value"]
+        rng = abs(metrics.get("initial_value", 0) - fv) if metrics.get("initial_value") is not None else abs(fv)
+        if rng > 1e-6:
+            band = rng * 0.02
+            ax.axhline(y=fv + band, color='gray', linestyle=':', alpha=0.4)
+            ax.axhline(y=fv - band, color='gray', linestyle=':', alpha=0.4)
+            ax.fill_between(time_s, fv - band, fv + band, alpha=0.05, color='green')
 
-    for i, (col, label, color) in enumerate(error_cols):
-        ax = axes[i]
-        signal = df[col].values
-        ax.plot(time_s, signal, color=color, linewidth=1.5, alpha=0.9, label=label)
-        ax.axvline(x=step_time, color='red', linestyle='--', alpha=0.4, label="Step Trigger")
-        ax.axhline(y=0, color='black', linestyle='-', alpha=0.2)
-        ax.set_ylabel(label, fontsize=11)
-        ax.legend(loc="upper right", fontsize=9)
-        ax.grid(True, alpha=0.3)
+    # Subplot 2: Position Tracking (Contextual based on axis)
+    ax = axes[1]
+    if axis == "yaw":
+        # Plot Drone Yaw vs Target Bearing
+        target_bearing = np.degrees(np.arctan2(df["target_y"] - df["drone_y"], df["target_x"] - df["drone_x"]))
+        drone_yaw = df["drone_yaw_deg"]
+        ax.plot(time_s, drone_yaw, color="tab:orange", linewidth=1.5, label="Drone Yaw", alpha=0.9)
+        ax.plot(time_s, target_bearing, 'r--', linewidth=2, label="Target Bearing", alpha=0.8)
+        ax.set_ylabel("Angle (deg)", fontsize=11)
+    elif axis == "dist":
+        # Plot Measured Distance to Target vs Desired Distance
+        measured_dist = df["distance_to_target"]
+        desired_dist = np.full_like(time_s, 0.6) # 0.6m stopping distance
+        ax.plot(time_s, measured_dist, color="tab:orange", linewidth=1.5, label="Measured Distance to Target", alpha=0.9)
+        ax.plot(time_s, desired_dist, 'r--', linewidth=2, label="Desired Stopping Distance", alpha=0.8)
+        ax.set_ylabel("Distance (m)", fontsize=11)
+    elif axis == "alt":
+        # Plot Target Altitude vs Drone Altitude (NED down is negative, so invert for altitude)
+        target_alt = -df["target_z"]
+        drone_alt = -df["drone_z"]
+        ax.plot(time_s, drone_alt, color="tab:orange", linewidth=1.5, label="Drone Altitude", alpha=0.9)
+        ax.plot(time_s, target_alt, 'r--', linewidth=2, label="Target Altitude", alpha=0.8)
+        ax.set_ylabel("Altitude (m)", fontsize=11)
 
-        # Compute metrics
-        metrics = compute_step_metrics(time_s, signal, step_time)
-        all_metrics[col] = metrics
+    ax.axvline(x=step_time, color='red', linestyle='--', alpha=0.4)
+    ax.legend(loc="upper right", fontsize=9)
 
-        # Annotate settling time band if available
-        if metrics.get("final_value") is not None and metrics.get("settling_time_s") is not None:
-            fv = metrics["final_value"]
-            rng = abs(metrics.get("initial_value", 0) - fv) if metrics.get("initial_value") is not None else abs(fv)
-            if rng > 1e-6:
-                band = rng * 0.02
-                ax.axhline(y=fv + band, color='gray', linestyle=':', alpha=0.4)
-                ax.axhline(y=fv - band, color='gray', linestyle=':', alpha=0.4)
-                ax.fill_between(time_s, fv - band, fv + band, alpha=0.05, color='green')
+    # Subplot 3: Velocity Command
+    ax = axes[2]
+    ax.plot(time_s, df[cmd_col], color=cmd_label[1], linewidth=1.5, label=cmd_label[0])
+    ax.axvline(x=step_time, color='red', linestyle='--', alpha=0.4)
+    ax.axhline(y=0, color='black', linestyle='-', alpha=0.2)
+    ax.set_ylabel(cmd_label[0], fontsize=11)
+    ax.legend(loc="upper right", fontsize=9)
+    axes[2].set_xlabel("Time (s)", fontsize=12)
 
-    axes[0].set_title(f"Test 2: Step Response — {axis.upper()} Step", fontsize=14, fontweight='bold')
-    axes[-1].set_xlabel("Time (s)", fontsize=12)
+    import matplotlib.ticker as ticker
+    for ax in axes:
+        # Increase tick label sizes
+        ax.tick_params(axis='both', which='major', labelsize=12)
+        
+        # Turn on minor ticks and set specific spacing
+        ax.minorticks_on()
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(5.0))  # Major tick every 5s
+        ax.xaxis.set_minor_locator(ticker.MultipleLocator(1.0))  # Minor tick every 1s
+        
+        # Draw dark, clear grids
+        ax.grid(which='major', color='black', alpha=0.4, linewidth=0.8)
+        ax.grid(which='minor', color='gray', alpha=0.3, linestyle='--')
+        
+        # Tighten bounds
+        ax.set_xlim([time_s.min(), time_s.max()])
+
     plt.tight_layout()
-
-    plot_path = os.path.join(plots_dir, f"{plot_basename}_errors.pdf")
+    plot_path = os.path.join(plots_dir, f"{plot_basename}_summary.pdf")
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     plt.savefig(plot_path.replace('.pdf', '.png'), dpi=150, bbox_inches='tight')    
-    print(f"Saved: {plot_path}")
-    plt.close()
-
-    # ── Figure 2: Drone Position vs Target Position ─────────────────────────
-    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
-
-    pos_pairs = [
-        ("drone_x", "target_x", "North (X)", "tab:blue"),
-        ("drone_y", "target_y", "East (Y)", "tab:orange"),
-        ("drone_z", "target_z", "Down (Z)", "tab:green"),
-    ]
-
-    for i, (drone_col, target_col, label, color) in enumerate(pos_pairs):
-        ax = axes[i]
-        ax.plot(time_s, df[target_col], 'r--', linewidth=2, label=f"Target {label}", alpha=0.8)
-        ax.plot(time_s, df[drone_col], color=color, linewidth=1.5, label=f"Drone {label}", alpha=0.9)
-        ax.axvline(x=step_time, color='red', linestyle='--', alpha=0.4)
-        ax.set_ylabel(f"{label} (m)", fontsize=11)
-        ax.legend(loc="upper right", fontsize=9)
-        ax.grid(True, alpha=0.3)
-
-    axes[0].set_title(f"Test 2: Drone vs Target Position — {axis.upper()} Step", fontsize=14, fontweight='bold')
-    axes[-1].set_xlabel("Time (s)", fontsize=12)
-    plt.tight_layout()
-
-    plot_path = os.path.join(plots_dir, f"{plot_basename}_position.pdf")
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-    plt.savefig(plot_path.replace('.pdf', '.png'), dpi=150, bbox_inches='tight')
-    print(f"Saved: {plot_path}")
-    plt.close()
-
-    # ── Figure 3: Command Outputs ───────────────────────────────────────────
-    fig, axes = plt.subplots(3, 1, figsize=(14, 8), sharex=True)
-
-    cmd_cols = [
-        ("vx_cmd", "Forward Velocity (m/s)", "tab:blue"),
-        ("vz_cmd", "Vertical Velocity (m/s)", "tab:orange"),
-        ("omega_z_cmd", "Yaw Rate (rad/s)", "tab:green"),
-    ]
-
-    for i, (col, label, color) in enumerate(cmd_cols):
-        ax = axes[i]
-        ax.plot(time_s, df[col], color=color, linewidth=1.5, alpha=0.9)
-        ax.axvline(x=step_time, color='red', linestyle='--', alpha=0.4)
-        ax.axhline(y=0, color='gray', linestyle='-', alpha=0.3)
-        ax.set_ylabel(label, fontsize=11)
-        ax.grid(True, alpha=0.3)
-
-    axes[0].set_title(f"Test 2: Velocity Commands Generated by Vision PID — {axis.upper()} Step", fontsize=14, fontweight='bold')
-    axes[-1].set_xlabel("Time (s)", fontsize=12)
-    plt.tight_layout()
-
-    plot_path = os.path.join(plots_dir, f"{plot_basename}_commands.pdf")
-    plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-    plt.savefig(plot_path.replace('.pdf', '.png'), dpi=150, bbox_inches='tight')
     print(f"Saved: {plot_path}")
     plt.close()
 
@@ -272,15 +261,16 @@ def plot_test_2(csv_path, output_dir=None):
     print(f"  STEP RESPONSE METRICS — {axis.upper()} STEP")
     print(f"{'=' * 60}")
 
-    for signal_name, metrics in all_metrics.items():
-        print(f"\n  {signal_name}:")
-        for key, value in metrics.items():
-            if isinstance(value, float):
-                print(f"    {key:25s}: {value:.4f}")
-            else:
-                print(f"    {key:25s}: {value}")
+    print(f"\n  {err_col}:")
+    for key, value in metrics.items():
+        if isinstance(value, float):
+            print(f"    {key:25s}: {value:.4f}")
+        else:
+            print(f"    {key:25s}: {value}")
 
     print(f"\n{'=' * 60}")
+
+    all_metrics = {err_col: metrics}
 
     return all_metrics
 
@@ -290,7 +280,7 @@ def main():
     parser.add_argument("--csv", type=str, default=None,
                         help="Path to the Test 2 CSV file")
     parser.add_argument("--axis", type=str, default=None,
-                        choices=["yaw", "altitude", "distance"],
+                        choices=["yaw", "alt", "dist"],
                         help="Axis to look for if --csv is not specified")
     args = parser.parse_args()
 

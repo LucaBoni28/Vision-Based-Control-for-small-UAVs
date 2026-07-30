@@ -25,10 +25,10 @@ import sys
 import os
 
 # Add parent directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
-from sitl_tests.virtual_camera import VirtualCamera
-from sitl_tests.sitl_utils import (
+from sitl_tests.utils.virtual_camera import VirtualCamera
+from sitl_tests.utils.sitl_utils import (
     load_config, sitl_connect, sitl_arm_and_takeoff,
     wait_for_position_data, CSVLogger,
 )
@@ -39,16 +39,16 @@ def parse_args():
         description="Test 2: Outer Loop Step Response — PD controller with Virtual Camera"
     )
     parser.add_argument("--step-axis", type=str, default="yaw",
-                        choices=["yaw", "altitude", "distance"],
+                        choices=["yaw", "alt", "dist"],
                         help="Axis for the step input (default: yaw)")
-    parser.add_argument("--step-magnitude", type=float, default=5.0,
-                        help="Step magnitude: meters for distance/altitude, meters offset for yaw (default: 5.0)")
-    parser.add_argument("--initial-distance", type=float, default=10.0,
-                        help="Initial distance to target in meters (default: 10.0)")
-    parser.add_argument("--settle-before", type=float, default=15.0,
-                        help="Time to let PD settle on initial target before step (s) (default: 15.0)")
-    parser.add_argument("--record-after", type=float, default=30.0,
-                        help="Time to record after the step (s) (default: 30.0)")
+    parser.add_argument("--step-magnitude", type=float, default=None,
+                        help="Step magnitude: meters for distance/altitude, meters offset for yaw (default: 3.0)")
+    parser.add_argument("--initial-distance", type=float, default=None,
+                        help="Initial distance to target in meters (default depends on axis: 0.6 for dist, 5.0 for others)")
+    parser.add_argument("--settle-before", type=float, default=5.0,
+                        help="Time to let PD settle on initial target before step (s) (default: 5.0)")
+    parser.add_argument("--record-after", type=float, default=10.0,
+                        help="Time to record after the step (s) (default: 10.0)")
     parser.add_argument("--takeoff-alt", type=float, default=10.0,
                         help="Takeoff altitude in meters (default: 10.0)")
     parser.add_argument("--loop-rate", type=float, default=20.0,
@@ -58,6 +58,16 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    # Set smart defaults if not provided
+    if args.step_magnitude is None:
+        args.step_magnitude = 3.0
+        
+    if args.initial_distance is None:
+        if args.step_axis == "dist":
+            args.initial_distance = 0.6
+        else:
+            args.initial_distance = 5.0
 
     print("=" * 60)
     print("  TEST 2: OUTER LOOP STEP RESPONSE")
@@ -98,18 +108,17 @@ def main():
     print(f"\nDrone position: ({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}), yaw={math.degrees(drone_yaw):.1f}°")
     print(f"Initial target: ({target_x:.2f}, {target_y:.2f}, {target_z:.2f})")
 
-    # Calculate the stepped target position
     if args.step_axis == "yaw":
-        # Move target laterally (East offset) to force a yaw response
-        step_target_x = target_x
-        step_target_y = target_y + args.step_magnitude
+        # Move target laterally (right/starboard) relative to drone heading
+        step_target_x = target_x - args.step_magnitude * math.sin(drone_yaw)
+        step_target_y = target_y + args.step_magnitude * math.cos(drone_yaw)
         step_target_z = target_z
-    elif args.step_axis == "altitude":
+    elif args.step_axis == "alt":
         # Move target vertically (Down is positive in NED, so negative = up)
         step_target_x = target_x
         step_target_y = target_y
         step_target_z = target_z - args.step_magnitude  # Move target UP
-    elif args.step_axis == "distance":
+    elif args.step_axis == "dist":
         # Move target further away along the drone's heading
         step_target_x = target_x + args.step_magnitude * math.cos(drone_yaw)
         step_target_y = target_y + args.step_magnitude * math.sin(drone_yaw)
@@ -117,11 +126,15 @@ def main():
 
     print(f"Stepped target: ({step_target_x:.2f}, {step_target_y:.2f}, {step_target_z:.2f})")
 
-    # Create virtual camera with config values
+    # Target area for distance control (from calibration)
+    from classes.distance_estimator import DistanceEstimator
+    dist_estimator = DistanceEstimator(config.calibration)
+
+    # Create virtual camera with calibrated values
     vcam = VirtualCamera(
         hfov_deg=62.2,
         vfov_deg=48.8,
-        optical_constant=config.calibration.optical_constant,
+        optical_constant=dist_estimator._optical_constant,
     )
 
     # Load PD gains from config
@@ -134,14 +147,11 @@ def main():
     k_d_vx = c.k_d_vx
     r_stop = c.r_stop
 
-    # Target area for distance control (from calibration)
-    from classes.distance_estimator import DistanceEstimator
-    dist_estimator = DistanceEstimator(config.calibration)
     target_area = dist_estimator.target_area(config.calibration.desired_stopping_distance_m)
     print(f"Target area (stopping distance {config.calibration.desired_stopping_distance_m}m): {target_area:.0f} px²")
 
     # Prepare CSV logger
-    csv_filename = f"test_2_step_response_{args.step_axis}.csv"
+    csv_filename = f"test_2_{args.step_axis}.csv"
     logger = CSVLogger(csv_filename, [
         "time_s", "phase",
         "target_x", "target_y", "target_z",
@@ -243,6 +253,17 @@ def main():
                 v_x = min(v_x_request, v_x_limit)
             else:
                 v_x = max(v_x_request, -v_x_limit)
+
+            # Isolate the test axis to avoid coupling dynamics
+            if args.step_axis == "yaw":
+                v_x = 0.0
+                v_z = 0.0
+            elif args.step_axis == "alt":
+                v_x = 0.0
+                omega_z = 0.0
+            elif args.step_axis == "dist":
+                v_z = 0.0
+                omega_z = 0.0
 
             # Send velocity command
             flight.send_velocity(v_x, 0.0, v_z, omega_z)
