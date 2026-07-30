@@ -22,6 +22,18 @@ class Attitude:
     roll: float   # radians
     pitch: float  # radians
     yaw: float    # radians, 0 = North, clockwise positive (compass convention)
+    yawspeed: float = 0.0 # rad/s
+
+
+@dataclass
+class LocalPositionNED:
+    """Drone position and velocity in the local NED (North-East-Down) frame."""
+    x: float    # meters, North
+    y: float    # meters, East
+    z: float    # meters, Down (negative = above home)
+    vx: float   # m/s, North
+    vy: float   # m/s, East
+    vz: float   # m/s, Down
 
 
 
@@ -30,11 +42,12 @@ class FlightController:
     def __init__(self, mavlink_config: MavlinkConfig):
         self._config = mavlink_config
         self.master = None
-        self._attitude = Attitude(roll=0.0, pitch=0.0, yaw=0.0)
+        self._attitude = Attitude(roll=0.0, pitch=0.0, yaw=0.0, yawspeed=0.0)
         self._last_heartbeat = None
         self._last_vel_log = 0.0
         self._last_heartbeat_sent = 0.0
         self._relative_alt_m = None  # Relative altitude above home (meters)
+        self._local_position_ned: Optional[LocalPositionNED] = None  # NED position from SITL
 
     # Connects to the flight controller via MAVLink, waits for a heartbeat, and requests attitude data at the specified stream rate
     def connect(self) -> None:
@@ -74,12 +87,28 @@ class FlightController:
             1,
         )
 
+        # Request LOCAL_POSITION_NED stream from the primary link
+        self.master.mav.request_data_stream_send(
+            self.master.target_system,
+            self.master.target_component,
+            mavutil.mavlink.MAV_DATA_STREAM_POSITION,
+            self._config.attitude_stream_rate_hz,
+            1,
+        )
+
         if self.telemetry_output and self._config.sitl:
             try:
-                # Also request position from the simulation
+                # Request position from the simulation
                 self.telemetry_output.mav.request_data_stream_send(
                     1, 1, # Default SITL target system/component
                     mavutil.mavlink.MAV_DATA_STREAM_POSITION,
+                    self._config.attitude_stream_rate_hz,
+                    1,
+                )
+                # Also request ATTITUDE (EXTRA1) from SITL — this gives us real yawspeed
+                self.telemetry_output.mav.request_data_stream_send(
+                    1, 1,
+                    mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
                     self._config.attitude_stream_rate_hz,
                     1,
                 )
@@ -102,8 +131,16 @@ class FlightController:
                     if not getattr(self, '_sitl_alt_active', False):
                         self._relative_alt_m = msg.relative_alt / 1000.0
 
+                if msg.get_type() == "LOCAL_POSITION_NED":
+                    if not getattr(self, '_sitl_pos_active', False):
+                        self._local_position_ned = LocalPositionNED(
+                            x=msg.x, y=msg.y, z=msg.z,
+                            vx=msg.vx, vy=msg.vy, vz=msg.vz,
+                        )
+
                 if msg.get_type() == "ATTITUDE":
-                    self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw)
+                    # Always read attitude from master; SITL telemetry_output will override below
+                    self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, yawspeed=msg.yawspeed)
 
         if self.telemetry_output:
             # Before draining, check if the TCP socket has hit EOF.
@@ -135,6 +172,19 @@ class FlightController:
                                 print(f"SITL ALTITUDE DETECTED! Overriding physical drone (SITL Alt: {msg.relative_alt / 1000.0}m)")
                             self._sitl_alt_active = True
                             self._relative_alt_m = msg.relative_alt / 1000.0
+
+                        if msg.get_type() == "LOCAL_POSITION_NED":
+                            if not getattr(self, '_sitl_pos_active', False):
+                                print("SITL LOCAL_POSITION_NED DETECTED! Using simulated NED position.")
+                            self._sitl_pos_active = True
+                            self._local_position_ned = LocalPositionNED(
+                                x=msg.x, y=msg.y, z=msg.z,
+                                vx=msg.vx, vy=msg.vy, vz=msg.vz,
+                            )
+
+                        if msg.get_type() == "ATTITUDE":
+                            # SITL attitude is authoritative — override physical Pixhawk reading
+                            self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, yawspeed=msg.yawspeed)
 
                 except (EOFError, ConnectionResetError, OSError) as e:
                     print(f"[WARNING] Telemetry socket lost ({type(e).__name__}): {e}. Will reconnect when Mission Planner is available.")
@@ -215,6 +265,17 @@ class FlightController:
     def target_component(self):
         return self.master.target_component
 
+    def set_parameter(self, param_id: str, param_value: float):
+        """Set a MAVLink parameter dynamically (useful for automated tuning)."""
+        param_id_bytes = param_id.encode('utf-8')[:16]
+        self.master.mav.param_set_send(
+            self.target_system, self.target_component,
+            param_id_bytes,
+            param_value,
+            mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+        )
+        print(f"MAVLink: Set parameter {param_id} = {param_value}")
+
     def get_flight_mode(self) -> str:
         if self._last_heartbeat is None:
             return "UNKNOWN"
@@ -260,6 +321,11 @@ class FlightController:
         self.update()
         return self._relative_alt_m
 
+    # Polls for a new LOCAL_POSITION_NED message and returns the drone's NED position and velocity. Returns None if no data received yet.
+    def poll_local_position_ned(self) -> Optional[LocalPositionNED]:
+        self.update()
+        return self._local_position_ned
+
     # Closes the telemetry output connection and resets related state flags
     def _close_telemetry(self) -> None:
         try:
@@ -270,6 +336,7 @@ class FlightController:
         # Reset SITL override flags so the physical Pixhawk data is used as fallback
         self._sitl_heartbeat_active = False
         self._sitl_alt_active = False
+        self._sitl_pos_active = False
 
     # Returns True if the telemetry socket has hit EOF (remote peer closed connection).
     # pymavlink's mavtcp.handle_eof() calls reconnect() which is a no-op when
@@ -303,28 +370,28 @@ class FlightController:
 
     # Sends a velocity command to the flight controller in the body frame, with the specified velocities in m/s and yaw rate in rad/s
     def send_velocity(self, vx: float, vy: float, vz: float, yaw_rate: float) -> None:
-        
+
         self.master.mav.set_position_target_local_ned_send(
             0, self.target_system, self.target_component,
             mavutil.mavlink.MAV_FRAME_BODY_NED,
-            0b0000011111000111,
+            0b0000011111000111,  # ignore pos, acc, yaw, yaw_rate — velocity only
             0, 0, 0,
             vx, vy, vz,
             0, 0, 0,
-            0, yaw_rate,
+            0, 0,
         )
 
-        # Mirror the velocity command to telemetry_output
+        # Mirror the velocity command to telemetry_output (Mission Planner display)
         if self.telemetry_output:
             try:
                 self.telemetry_output.mav.set_position_target_local_ned_send(
-                    0, 0, 0, # Target system 0 and component 0 (Broadcast) so MP accepts it
+                    0, 0, 0,  # Target system 0, component 0 (broadcast) so MP accepts it
                     mavutil.mavlink.MAV_FRAME_BODY_NED,
                     0b0000011111000111,
                     0, 0, 0,
                     vx, vy, vz,
                     0, 0, 0,
-                    0, yaw_rate,
+                    0, 0,
                 )
             except Exception:
                 pass  # Don't crash if telemetry link is down
