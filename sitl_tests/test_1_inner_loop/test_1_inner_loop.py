@@ -19,9 +19,9 @@ import sys
 import os
 
 # Add parent directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
-from sitl_tests.sitl_utils import (
+from sitl_tests.utils.sitl_utils import (
     load_config, sitl_connect, sitl_arm_and_takeoff,
     wait_for_position_data, CSVLogger,
 )
