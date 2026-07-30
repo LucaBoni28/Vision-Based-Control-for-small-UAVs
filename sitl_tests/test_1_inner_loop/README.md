@@ -65,3 +65,12 @@ Once you have set the optimal gains (or if you just want to verify the current A
 * `plot_test_1.py`: Reads a CSV and outputs graphs & metrics.
 * `logs/`: Where all `.csv` files are saved.
 * `plots/`: Where all generated `.png` and `.pdf` charts are saved.
+
+---
+
+## Important Note: `yaw_rate` Axis Tuning
+You may notice that the `yaw_rate` axis is not programmatically tuned using these scripts. This is due to architectural limitations in the current MAVLink bridging setup:
+
+1. **GUIDED Mode Limitations:** ArduCopter's `SET_POSITION_TARGET_LOCAL_NED` command strictly accepts `vx, vy, vz` velocity vectors. It natively ignores the `yaw_rate` field when in GUIDED mode.
+2. **ACRO Mode & RC Overrides:** To directly command the `ATC_RAT_YAW` PID loop, one must switch to ACRO mode and inject raw yaw stick inputs using `RC_CHANNELS_OVERRIDE`. However, the current SITL bridge architecture acts as a read-only telemetry link for some channels and drops/fails to forward programmatic RC overrides sent by our python script to the SITL drone.
+3. **Conclusion:** Because the script cannot reliably inject yaw rate commands to measure the step response, it's impossible to use `auto_tune_inner.py` for yaw. Instead, we rely on **ArduCopter's default `ATC_RAT_YAW` gains**, which are highly optimized out-of-the-box for most standard multicopter frames.
