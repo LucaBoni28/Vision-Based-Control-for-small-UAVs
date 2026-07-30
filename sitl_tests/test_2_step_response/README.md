@@ -17,17 +17,17 @@ cd sitl_tests/test_2_step_response/
 # Example 1: Tune Forward Approach (Distance)
 # Places the drone 0.6m from the target (the stopping distance), waits 5s for it to settle,
 # then moves the target 3.0m away and records the approach.
-python3 test_2_step_response.py --step-axis dist
+python test_2_step_response.py --step-axis dist
 
 # Example 2: Tune Yaw Tracking
 # Places target 5.0m away, waits for drone to perfectly center it,
 # then instantly shifts the target 3.0m to the right and records the rotation.
-python3 test_2_step_response.py --step-axis yaw
+python test_2_step_response.py --step-axis yaw
 
 # Example 3: Tune Altitude Tracking
 # Places target 5.0m away, waits for drone to center it vertically,
 # then instantly shifts the target 3.0m up and records the climb.
-python3 test_2_step_response.py --step-axis alt
+python test_2_step_response.py --step-axis alt
 ```
 
 ### 2. Plot and Analyze Results
@@ -35,7 +35,7 @@ Once the test finishes, a CSV log is saved in `logs/`. Use the plotting script t
 
 ```bash
 # Plot the test you just ran
-python3 plot_test_2.py --axis dist
+python plot_test_2.py --axis dist
 # OR --axis yaw, --axis alt
 ```
 *This will generate a summary PDF in `plots/` and print the metrics to your terminal.*
