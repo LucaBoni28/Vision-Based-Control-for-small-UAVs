@@ -66,6 +66,20 @@ class DistanceEstimator:
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
         self._optical_constant = optical_constant
+        
+        # Update config.yaml to keep it in sync
+        import re
+        config_path = Path("classes/config.yaml")
+        if config_path.exists():
+            with open(config_path, "r") as f:
+                content = f.read()
+            content = re.sub(
+                r"(optical_constant:\s*)[\d\.]+",
+                f"\\g<1>{optical_constant}",
+                content
+            )
+            with open(config_path, "w") as f:
+                f.write(content)
 
     @property
     def optical_constant(self) -> float:

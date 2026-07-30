@@ -54,24 +54,24 @@ tracker:
 
 # PID controller gains and deadzones for drone movement
 control:
-  k_p_yaw: 4.231974921630094         # Proportional gain for yaw (turning left/right)
-  k_d_yaw: 0.3887147335423197        # Derivative gain for yaw
-  k_p_vz: 3.714733542319749          # Proportional gain for vertical velocity (up/down)
-  k_d_vz: 0.5266457680250783         # Derivative gain for vertical velocity
-  k_p_vx: 1.5517241379310347         # Proportional gain for forward velocity (approaching)
-  r_stop: 0.8                        # Stop ratio or target area ratio for approach
+  k_p_yaw: 0.5                       # Proportional gain for yaw (turning left/right)
+  k_d_yaw: 0.05                      # Derivative gain for yaw
+  k_p_vz: 0.8                        # Proportional gain for vertical velocity (up/down)
+  k_d_vz: 0.31                       # Derivative gain for vertical velocity
+  k_p_vx: 1                          # Proportional gain for forward velocity (approaching)
+  r_stop: 0.05                       # Stop ratio or target area ratio for approach
   yaw_deadzone: 0.03                 # Minimum error in yaw to act upon
   vz_deadzone: 0.03                  # Minimum error in vertical position to act upon
   area_deadzone: 0.05                # Minimum error in area (distance) to act upon
   max_derivative_dt: 0.5             # Maximum delta time allowed for derivative calculation
-  k_d_vx: 0.9529780564263323         # Derivative gain for forward velocity
+  k_d_vx: 0.06                       # Derivative gain for forward velocity
   hover_timeout: 10.0                # Time (seconds) to wait in hover before fallback action (landing)
 
 # Camera calibration and distance estimation parameters
 calibration:
   file: calibration.json              # File storing calibration data
   desired_stopping_distance_m: 0.6    # Target distance to stop from the tracked object
-  optical_constant: 7192.943181818182 # Pre-calculated constant for distance estimation based on bounding box size
+  optical_constant: 108067.2          # Pre-calculated constant for distance estimation based on bounding box size
   frames_per_sample: 30               # Number of frames to average for calibration
 
 # Mission behavior for auto-start and hover detection
