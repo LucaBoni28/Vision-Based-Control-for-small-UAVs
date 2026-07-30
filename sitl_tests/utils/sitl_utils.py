@@ -61,10 +61,15 @@ class CSVLogger:
 # ─── SITL Connection ─────────────────────────────────────────────────────────
 
 def load_config(config_path: str = None) -> AppConfig:
-    """Load the application config, defaulting to classes/config.yaml."""
+    """Load the application config, defaulting to classes/config.yaml or pc_test/config_local.yaml if present."""
     if config_path is None:
         project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-        config_path = os.path.join(project_root, "classes", "config.yaml")
+        local_config_path = os.path.join(project_root, "pc_test", "config_local.yaml")
+        if os.path.exists(local_config_path):
+            config_path = local_config_path
+            print(f"Using local config override: {config_path}")
+        else:
+            config_path = os.path.join(project_root, "classes", "config.yaml")
     return AppConfig.load(config_path)
 
 
