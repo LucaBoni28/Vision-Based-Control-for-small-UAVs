@@ -14,7 +14,7 @@ If the drone is oscillating or responding too slowly to velocity commands, you c
    cd sitl_tests/test_1_inner_loop/
    
    # Example: Tune the forward velocity (vx) axis
-   python3 auto_tune_inner.py --axis vx \
+   python auto_tune_inner.py --axis vx \
        --p-min 1.0 --p-max 3.0 --p-step 0.5 \
        --i-min 0.5 --i-max 1.5 --i-step 0.5
    ```
@@ -27,7 +27,7 @@ If the drone is oscillating or responding too slowly to velocity commands, you c
 3. **Plot the Best Tune**
    Use the plotting script on the best CSV generated:
    ```bash
-   python3 plot_test_1.py --csv logs/autotune_vx_p2.00_i1.40.csv
+   python plot_test_1.py --csv logs/autotune_vx_p2.00_i1.40.csv
    ```
    This will generate `plots/autotune_vx_p2.00_i1.40.png` and a PDF equivalent.
 
@@ -43,7 +43,7 @@ Once you have set the optimal gains (or if you just want to verify the current A
    cd sitl_tests/test_1_inner_loop/
    
    # Example: Apply a 1.5 m/s step to the forward axis (vx) for 10 seconds
-   python3 test_1_inner_loop.py --axis vx --velocity 1.5 --duration 10
+   python test_1_inner_loop.py --axis vx --velocity 1.5 --duration 10
    ```
    *Note: If testing `vz` (altitude), a negative velocity means climbing.*
 
@@ -52,7 +52,7 @@ Once you have set the optimal gains (or if you just want to verify the current A
 
 3. **Plot the Results**
    ```bash
-   python3 plot_test_1.py --csv logs/test_1_step_vx.csv
+   python plot_test_1.py --csv logs/test_1_step_vx.csv
    ```
    - This generates `plots/test_1_step_vx.png` (and PDF).
    - The script will also output a table of metrics to the terminal including Delay Time, Rise Time, Steady-State Error, and Overshoot.
