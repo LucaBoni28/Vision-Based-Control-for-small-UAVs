@@ -104,6 +104,9 @@ class ControlConfig:
     area_deadzone: float
     max_derivative_dt: float
     hover_timeout: float
+    max_vx: float
+    max_vz: float
+    max_yaw_rate: float
 
 
 @dataclass

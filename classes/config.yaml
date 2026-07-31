@@ -59,13 +59,16 @@ control:
   k_p_vz: 0.8                        # Proportional gain for vertical velocity (up/down)
   k_d_vz: 0.31                       # Derivative gain for vertical velocity
   k_p_vx: 1                          # Proportional gain for forward velocity (approaching)
+  k_d_vx: 0.06                       # Derivative gain for forward velocity
   r_stop: 0.05                       # Stop ratio or target area ratio for approach
   yaw_deadzone: 0.03                 # Minimum error in yaw to act upon
   vz_deadzone: 0.03                  # Minimum error in vertical position to act upon
   area_deadzone: 0.05                # Minimum error in area (distance) to act upon
   max_derivative_dt: 0.5             # Maximum delta time allowed for derivative calculation
-  k_d_vx: 0.06                       # Derivative gain for forward velocity
   hover_timeout: 10.0                # Time (seconds) to wait in hover before fallback action (landing)
+  max_vx: 1.5                        # Maximum forward velocity limit (m/s)
+  max_vz: 1.0                        # Maximum vertical velocity limit (m/s)
+  max_yaw_rate: 1.0                  # Maximum yaw rate limit (rad/s)
 
 # Camera calibration and distance estimation parameters
 calibration:
@@ -99,4 +102,4 @@ command_link:
 
 # Handles camera pitch relative to drone pitch
 pitch_compensation:
-  mode: software # 'software' (adjusts bounding boxes), 'gimbal_auto', 'gimbal_manual', or 'none'
+  mode: gimbal_manual # 'software' (adjusts bounding boxes), 'gimbal_auto', 'gimbal_manual', or 'none'

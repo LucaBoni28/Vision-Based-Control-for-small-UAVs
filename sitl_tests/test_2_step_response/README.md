@@ -65,6 +65,39 @@ Open `classes/config.yaml` and locate the `control:` section. Modify the gains b
 - `--settle-before FLOAT`: Time (in seconds) to let the drone stabilize on the target before the step occurs. Default: `5.0`
 - `--record-after FLOAT`: Time (in seconds) to record data after the step occurs. Default: `10.0`
 
+---
+
+## Automated Tuning (`auto_tune_outer.py`)
+
+If you don't want to guess-and-check gains manually, you can use the automated tuner. It runs a grid search over a range of P and D gains, modifies the configuration in-memory, executes the step response, and scores the result based on Settling Time and Overshoot.
+
+### 1. Run the Autotuner
+```bash
+# Example: Tune distance (forward velocity) over a grid of P and D gains
+python3 auto_tune_outer.py --axis dist \
+  --p-min 0.5 --p-max 1.5 --p-step 0.5 \
+  --d-min 0.02 --d-max 0.10 --d-step 0.02
+```
+
+The script will:
+- Reuse a single flight session (so you don't have to wait for takeoff each time).
+- Automatically recover altitude if it drops during aggressive altitude tests.
+- Rank the combinations and save a summary CSV (e.g., `autotune_outer_dist_summary_12345.csv`).
+- Only save the step response CSV file for the **absolute best** combination to save disk space.
+
+### 2. Plot the Best Result
+The autotuner will output the file path of the winning CSV log. You can plot it exactly like a manual test by using the `--csv` flag instead of `--axis`:
+
+```bash
+python3 plot_test_2.py --csv logs/autotune_outer_dist_p0.50_d0.0600_12345.csv
+```
+
+**Relevant Autotune Arguments:**
+- `--axis {yaw,alt,dist}`: (Required) Which axis to tune.
+- `--p-min`, `--p-max`, `--p-step`: Range for Proportional gain.
+- `--d-min`, `--d-max`, `--d-step`: Range for Derivative gain.
+- `--step-magnitude`, `--initial-distance`: (Optional) Defaults map intelligently just like the manual test script.
+
 **plot_test_2.py**
 - `--axis {yaw,alt,dist}`: (Required) Which axis log to read and plot. Automatically looks for `logs/test_2_<axis>.csv`.
 - `--csv PATH`: Optional override to directly specify a specific CSV file.

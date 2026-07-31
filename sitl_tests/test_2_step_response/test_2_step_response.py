@@ -84,10 +84,13 @@ def main():
         print("ERROR: Takeoff failed. Exiting.")
         return
 
+    run_step_response(args, config, flight)
+
+def run_step_response(args, config, flight, test_id=None):
     # Wait for position data
     if not wait_for_position_data(flight):
         print("ERROR: No position data. Exiting.")
-        return
+        return None, None
 
     # Get initial drone position to place the target relative to it
     flight.poll_heartbeat()
@@ -96,7 +99,7 @@ def main():
 
     if pos is None:
         print("ERROR: Cannot read initial position. Exiting.")
-        return
+        return None, None
 
     drone_yaw = attitude.yaw
 
@@ -150,8 +153,12 @@ def main():
     target_area = dist_estimator.target_area(config.calibration.desired_stopping_distance_m)
     print(f"Target area (stopping distance {config.calibration.desired_stopping_distance_m}m): {target_area:.0f} px²")
 
-    # Prepare CSV logger
-    csv_filename = f"test_2_{args.step_axis}.csv"
+    # Setup CSV logger
+    if test_id is None:
+        csv_filename = f"test_2_{args.step_axis}.csv"
+    else:
+        csv_filename = f"autotune_outer_{args.step_axis}_{test_id}.csv"
+        
     logger = CSVLogger(csv_filename, [
         "time_s", "phase",
         "target_x", "target_y", "target_z",
@@ -242,17 +249,21 @@ def main():
             if abs(e_area) < config.control.area_deadzone:
                 v_x_request = 0.0
 
-            # Speed limiting based on centering error
-            if e_mag >= r_stop:
+            # Velocity limits (coupled limiting for safety)
+            e_scaled = min(1.0, e_mag / r_stop)
+            if e_scaled >= 1.0:
                 v_x_limit = 0.0
             else:
-                e_scaled = e_mag / r_stop
-                v_x_limit = k_p_vx * (1 - e_scaled**2)
+                v_x_limit = config.control.max_vx * (1 - e_scaled**2)
 
             if v_x_request > 0:
                 v_x = min(v_x_request, v_x_limit)
             else:
                 v_x = max(v_x_request, -v_x_limit)
+                
+            # Standard clipping for other axes
+            v_z = max(min(v_z, config.control.max_vz), -config.control.max_vz)
+            omega_z = max(min(omega_z, config.control.max_yaw_rate), -config.control.max_yaw_rate)
 
             # Isolate the test axis to avoid coupling dynamics
             if args.step_axis == "yaw":
@@ -303,10 +314,11 @@ def main():
         logger.close()
 
     print(f"\n{'=' * 60}")
-    print(f"  TEST 2 COMPLETE")
+    print(f"  TEST 2 STEP RESPONSE COMPLETE")
     print(f"  Data saved to: {logger.filepath}")
-    print(f"  Plot the step response to measure Rise Time, Overshoot, Settling Time")
     print(f"{'=' * 60}")
+    
+    return logger.filepath, args.settle_before
 
 
 if __name__ == "__main__":
