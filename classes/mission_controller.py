@@ -462,18 +462,21 @@ class MissionController:
 
                     # Speed Limit: If the target is way off center (e_mag >= r_stop), 
                     # stop moving forward until we yaw/climb to center it first.
-                    if e_mag >= self._r_stop: 
+                    e_scaled = min(1.0, e_mag / self._r_stop)
+                    if e_scaled >= 1.0:
                         v_x_limit = 0.0
                     else:
-                        # Gradually allow more forward speed as the target gets closer to the center
-                        e_scaled = e_mag / self._r_stop
-                        v_x_limit = self._k_p_vx * (1 - e_scaled**2)
+                        v_x_limit = self.config.control.max_vx * (1 - e_scaled**2)
 
                     # Apply the calculated speed limit to the requested forward velocity
                     if v_x_request > 0:
                         v_x = min(v_x_request, v_x_limit)
                     else:
                         v_x = max(v_x_request, -v_x_limit)
+
+                    # Standard clipping for other axes
+                    v_z = max(min(v_z, self.config.control.max_vz), -self.config.control.max_vz)
+                    omega_z = max(min(omega_z, self.config.control.max_yaw_rate), -self.config.control.max_yaw_rate)
 
                     if should_print:
                         print(f"Pitch: {current_pitch_rad*180/3.14:.2f} deg | Vx: {v_x:.2f} m/s | "

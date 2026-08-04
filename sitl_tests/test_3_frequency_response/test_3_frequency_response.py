@@ -201,17 +201,21 @@ def run_single_frequency(flight, config, vcam, target_area,
             if abs(e_area) < config.control.area_deadzone:
                 v_x_request = 0.0
 
-            # Speed limiting
-            if e_mag >= r_stop:
+            # Velocity limits (coupled limiting for safety)
+            e_scaled = min(1.0, e_mag / config.control.r_stop)
+            if e_scaled >= 1.0:
                 v_x_limit = 0.0
             else:
-                e_scaled = e_mag / r_stop
-                v_x_limit = k_p_vx * (1 - e_scaled**2)
+                v_x_limit = config.control.max_vx * (1 - e_scaled**2)
 
             if v_x_request > 0:
                 v_x = min(v_x_request, v_x_limit)
             else:
                 v_x = max(v_x_request, -v_x_limit)
+                
+            # Standard clipping for other axes
+            v_z = max(min(v_z, config.control.max_vz), -config.control.max_vz)
+            omega_z = max(min(omega_z, config.control.max_yaw_rate), -config.control.max_yaw_rate)
 
             # Send velocity command
             flight.send_velocity(v_x, 0.0, v_z, omega_z)

@@ -35,18 +35,19 @@ def find_latest_csv(axis=None):
     return max(files, key=os.path.getmtime)
 
 
-def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02):
+def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02, target_value=0.0):
     """
-    Compute standard step response metrics.
+    Compute standard step response metrics relative to a desired target value (default 0.0).
 
     Args:
         time_s: Time array
-        signal: Error signal (should approach 0 after the step response settles)
+        signal: Error signal (should approach target_value after the step response settles)
         step_time: Time when the step was applied
         settling_pct: Percentage band for settling time (default: 2%)
+        target_value: The ideal final value of the signal (0.0 for error signals)
 
     Returns:
-        dict with rise_time_s, settling_time_s, overshoot_pct, peak_value, final_value
+        dict with rise_time_s, settling_time_s, overshoot_pct, peak_value, final_value, steady_state_error
     """
     # Get data after the step
     step_mask = time_s >= step_time
@@ -59,14 +60,16 @@ def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02):
     # Initial value (at the moment of the step)
     initial_value = sig_step[0]
 
-    # Final value (average of last 20%)
+    # Final achieved value (average of last 20%)
     n_ss = max(1, len(sig_step) // 5)
     final_value = np.mean(sig_step[-n_ss:])
+    steady_state_error = abs(final_value - target_value)
 
-    # Response range
-    response_range = final_value - initial_value
+    # Response range based on IDEAL target, not actual final value
+    # This prevents the metrics from looking good if the drone just flies away and gets stuck
+    response_range = target_value - initial_value
     if abs(response_range) < 1e-6:
-        return {"initial_value": initial_value, "final_value": final_value}
+        return {"initial_value": initial_value, "final_value": final_value, "steady_state_error": steady_state_error}
 
     # Normalized response (0 → 1)
     normalized = (sig_step - initial_value) / response_range
@@ -79,7 +82,7 @@ def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02):
     else:
         rise_time_s = float('nan')
 
-    # Peak and overshoot
+    # Peak and overshoot (relative to target value)
     if response_range > 0:
         peak_idx = np.argmax(sig_step)
     else:
@@ -88,28 +91,31 @@ def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02):
     peak_time = t_step[peak_idx]
 
     if abs(response_range) > 1e-6:
-        overshoot_pct = abs((peak_value - final_value) / response_range) * 100
+        # Overshoot is how far past the TARGET it went
+        overshoot_val = (peak_value - target_value) / response_range
+        overshoot_pct = max(0.0, overshoot_val * 100)
     else:
         overshoot_pct = 0.0
 
-    # Settling time: last time the signal exits the ±settling_pct band
+    # Settling time: last time the signal exits the ±settling_pct band around the TARGET
     settling_band = abs(response_range) * settling_pct
-    within_band = np.abs(sig_step - final_value) <= settling_band
+    within_band = np.abs(sig_step - target_value) <= settling_band
 
     # Find the last time it leaves the band
     settling_time_s = float('nan')
-    if np.any(within_band):
-        # Walk backwards from the end to find where it enters the band for good
-        for i in range(len(within_band) - 1, -1, -1):
-            if not within_band[i]:
-                settling_time_s = t_step[i + 1] if i + 1 < len(t_step) else t_step[i]
-                break
+    if np.all(within_band[-10:]):  # Must actually end up inside the band!
+        out_of_band_indices = np.where(~within_band)[0]
+        if len(out_of_band_indices) > 0:
+            last_out_idx = out_of_band_indices[-1]
+            if last_out_idx + 1 < len(t_step):
+                settling_time_s = t_step[last_out_idx + 1]
         else:
-            settling_time_s = t_step[0]  # Always within band
+            settling_time_s = 0.0 # Never left the band
 
     return {
         "initial_value": initial_value,
         "final_value": final_value,
+        "steady_state_error": steady_state_error,
         "rise_time_s": rise_time_s,
         "settling_time_s": settling_time_s,
         "overshoot_pct": overshoot_pct,
