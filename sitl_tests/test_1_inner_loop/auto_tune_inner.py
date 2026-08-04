@@ -19,13 +19,13 @@ import pandas as pd
 import numpy as np
 
 # Add parent directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "../.."))
 
-from sitl_tests.sitl_utils import (
+from sitl_tests.utils.sitl_utils import (
     load_config, sitl_connect, sitl_arm_and_takeoff,
     wait_for_position_data, CSVLogger,
 )
-from graphs_generation.plot_test_1 import compute_metrics
+from plot_test_1 import compute_metrics
 
 
 def parse_args():
@@ -81,7 +81,7 @@ def run_single_test(flight, p_val, i_val, args, test_id):
     time.sleep(2.0)
     
     # 2. Setup Logger
-    csv_filename = f"autotune_{args.axis}_p{p_val:.2f}_i{i_val:.2f}.csv"
+    csv_filename = f"autotune_{args.axis}_p{p_val:.2f}_i{i_val:.2f}_{test_id}.csv"
     logger = CSVLogger(csv_filename, [
         "time_s", cmd_col, act_col
     ])
@@ -183,8 +183,18 @@ def main():
         print("ERROR: No position data. Exiting.")
         return
         
-    # Unique ID for this tuning session
-    test_id = int(time.time())
+    # Unique run ID based on existing files
+    logs_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    existing_summaries = glob.glob(os.path.join(logs_dir_path, f"autotune_{args.axis}_summary_run_*.csv"))
+    run_numbers = []
+    for f in existing_summaries:
+        try:
+            num = int(f.split("_run_")[-1].split(".")[0])
+            run_numbers.append(num)
+        except ValueError:
+            pass
+    next_run = max(run_numbers) + 1 if run_numbers else 1
+    test_id = f"run_{next_run:03d}"
     
     results = []
     best_cost = float('inf')
@@ -272,7 +282,7 @@ def main():
         print(results_df.sort_values(by="Cost")[["P", "I", "Rise_Time", "SS_Error", "Cost"]].to_string(index=False))
         
         best = results_df.loc[results_df["Cost"].idxmin()]
-        print(f"\n🏆 BEST TUNE ({args.axis.upper()}):")
+        print(f"\n* BEST TUNE ({args.axis.upper()}):")
         print(f"   P-Gain = {best['P']}")
         print(f"   I-Gain = {best['I']}")
         print(f"   (Score: {best['Cost']:.3f})")

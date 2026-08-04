@@ -150,8 +150,22 @@ def main():
     target_area = dist_estimator.target_area(config.calibration.desired_stopping_distance_m)
     print(f"Target area (stopping distance {config.calibration.desired_stopping_distance_m}m): {target_area:.0f} px²")
 
+    # Determine run number
+    import glob
+    logs_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    existing_logs = glob.glob(os.path.join(logs_dir_path, f"test_2_{args.step_axis}_run_*.csv"))
+    run_numbers = []
+    for f in existing_logs:
+        try:
+            num = int(f.split("_run_")[-1].split(".")[0])
+            run_numbers.append(num)
+        except ValueError:
+            pass
+    next_run = max(run_numbers) + 1 if run_numbers else 1
+    run_id = f"run_{next_run:03d}"
+
     # Prepare CSV logger
-    csv_filename = f"test_2_{args.step_axis}.csv"
+    csv_filename = f"test_2_{args.step_axis}_{run_id}.csv"
     logger = CSVLogger(csv_filename, [
         "time_s", "phase",
         "target_x", "target_y", "target_z",

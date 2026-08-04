@@ -69,8 +69,22 @@ def main():
         print("ERROR: No position data. Exiting.")
         return
 
+    # Determine run number
+    import glob
+    logs_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    existing_logs = glob.glob(os.path.join(logs_dir_path, f"test_1_step_{args.axis}_run_*.csv"))
+    run_numbers = []
+    for f in existing_logs:
+        try:
+            num = int(f.split("_run_")[-1].split(".")[0])
+            run_numbers.append(num)
+        except ValueError:
+            pass
+    next_run = max(run_numbers) + 1 if run_numbers else 1
+    run_id = f"run_{next_run:03d}"
+    
     # Prepare CSV logger
-    csv_filename = f"test_1_step_{args.axis}.csv"
+    csv_filename = f"test_1_step_{args.axis}_{run_id}.csv"
     logger = CSVLogger(csv_filename, [
         "time_s",
         "cmd_vx", "cmd_vy", "cmd_vz",

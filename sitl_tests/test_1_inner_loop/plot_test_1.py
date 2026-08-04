@@ -26,7 +26,7 @@ def find_latest_csv(axis=None):
     """Find the most recent Test 1 CSV file."""
     logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
     if axis:
-        pattern = os.path.join(logs_dir, f"test_1_step_{axis}.csv")
+        pattern = os.path.join(logs_dir, f"test_1_step_{axis}*.csv")
     else:
         pattern = os.path.join(logs_dir, "test_1_step_*.csv")
     files = glob.glob(pattern)

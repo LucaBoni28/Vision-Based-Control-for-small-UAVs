@@ -14,9 +14,7 @@ If the drone is oscillating or responding too slowly to velocity commands, you c
    cd sitl_tests/test_1_inner_loop/
    
    # Example: Tune the forward velocity (vx) axis
-   python auto_tune_inner.py --axis vx \
-       --p-min 1.0 --p-max 3.0 --p-step 0.5 \
-       --i-min 0.5 --i-max 1.5 --i-step 0.5
+   python auto_tune_inner.py --axis vx --p-min 1.0 --p-max 3.0 --p-step 0.5 --i-min 0.5 --i-max 1.5 --i-step 0.5
    ```
 
 2. **Check the Output**
