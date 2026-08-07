@@ -23,10 +23,12 @@ class ThesisLogger:
         "step_response": [
             "Time_Sec",
             "e_x",
-            "e_y_comp",
+            "e_y",
+            "e_area",
             "e_mag",
-            "omega_z",
+            "v_x",
             "v_z",
+            "omega_z",
         ],
         "combined": [
             "Frame_Number",
