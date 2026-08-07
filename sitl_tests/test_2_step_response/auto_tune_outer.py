@@ -42,8 +42,8 @@ def parse_args():
     # Test params
     parser.add_argument("--axis", type=str, default="dist", choices=["dist", "yaw", "alt"], 
                         help="Axis to tune (default: dist)")
-    parser.add_argument("--step-magnitude", type=float, default=None, 
-                        help="Step magnitude (default: 3.0)")
+    parser.add_argument("--step-magnitude", type=float, default=3.0, 
+                        help="Step magnitude")
     parser.add_argument("--initial-distance", type=float, default=None, 
                         help="Initial distance (default: 0.6 for dist, 5.0 for others)")
     parser.add_argument("--settle-before", type=float, default=5.0, 
@@ -65,13 +65,11 @@ def main():
     
     # Map 'axis' to 'step_axis' for compatibility with run_step_response
     args.step_axis = args.axis
-    
-    if args.step_magnitude is None:
-        args.step_magnitude = 3.0
-        
+     
     if args.initial_distance is None:
         if args.step_axis == "dist":
             args.initial_distance = 0.6
+            args.step_magnitude = 1.0
         else:
             args.initial_distance = 5.0
 
@@ -126,7 +124,16 @@ def main():
         test_num = 1
         for p in p_values:
             for d in d_values:
-                print(f"\n[Test {test_num}/{total_tests}] Setting P={p:.2f}, D={d:.4f}")
+                # Match Test 1 print format
+                if args.axis == "dist":
+                    param_p, param_d = "k_p_vx", "k_d_vx"
+                elif args.axis == "yaw":
+                    param_p, param_d = "k_p_yaw", "k_d_yaw"
+                elif args.axis == "alt":
+                    param_p, param_d = "k_p_vz", "k_d_vz"
+
+                print(f"\n[Test {test_num}/{total_tests}]")
+                print(f"\n--- Testing {args.axis.upper()} | {param_p}={p:.2f}, {param_d}={d:.4f} ---")
                 
                 # Ensure the drone is perfectly stationary before starting the test
                 # This prevents momentum from the previous test from skewing the settle phase
@@ -149,16 +156,23 @@ def main():
                 if args.axis == "dist":
                     config.control.k_p_vx = p
                     config.control.k_d_vx = d
-                    err_col = "e_area"
+                    err_col = "distance_to_target"
+                    target_val = 0.6
                 elif args.axis == "yaw":
                     config.control.k_p_yaw = p
                     config.control.k_d_yaw = d
                     err_col = "e_x"
+                    target_val = 0.0
                 elif args.axis == "alt":
                     config.control.k_p_vz = p
                     config.control.k_d_vz = d
                     err_col = "e_y"
+                    target_val = 0.0
                 
+                print(f"Config: Set parameter {param_p} = {p:.2f}")
+                print(f"Config: Set parameter {param_d} = {d:.4f}")
+
+                args.quiet = True
                 csv_path, step_start = run_step_response(args, config, flight, test_id=f"p{p:.2f}_d{d:.4f}_{test_id}")
                 
                 if csv_path is None:
@@ -170,7 +184,7 @@ def main():
                 time_s = df["time_s"].values
                 signal = df[err_col].values
                 
-                metrics = compute_step_metrics(time_s, signal, step_start)
+                metrics = compute_step_metrics(time_s, signal, step_start, target_value=target_val)
                 
                 if metrics and metrics.get('settling_time_s') is not None:
                     # Cost Function: Settling Time + 5 * Overshoot%
@@ -183,6 +197,13 @@ def main():
                     # Target loss condition (e_area near +/- 1.0 or +/- 2.0 when bounds are hit)
                     if ss_err > 0.5:
                         print("  Result -> FAILED (TARGET LOST OR HUGE STEADY STATE ERROR)")
+                        os.remove(csv_path)
+                        test_num += 1
+                        continue
+                        
+                    import math
+                    if math.isnan(st) or math.isnan(rt):
+                        print("  Result -> FAILED TO SETTLE (nan metrics)")
                         os.remove(csv_path)
                         test_num += 1
                         continue
@@ -199,7 +220,7 @@ def main():
                         "File": csv_path
                     })
                     
-                    print(f"  Result -> Rise Time: {rt:.2f}s, Overshoot: {os_pct:.1f}%, Settling: {st:.2f}s, SS_Err: {ss_err:.3f} | COST: {cost:.3f}")
+                    print(f"  Result -> Rise Time: {rt:.2f}s, SS Error: {ss_err:.3f}, Overshoot: {os_pct:.1f}% | COST: {cost:.3f}")
                     
                     # Keep only the best CSV file on disk to save space
                     if cost < best_cost:
@@ -234,7 +255,11 @@ def main():
         print(f"  Saved to: {best['File']}")
         
         # Save summary
-        summary_path = os.path.join(os.path.dirname(best_file), f"autotune_outer_{args.axis}_summary_{test_id}.csv")
+        if best_file is not None:
+            summary_path = os.path.join(os.path.dirname(best_file), f"autotune_outer_{args.axis}_summary_{test_id}.csv")
+        else:
+            summary_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", f"autotune_outer_{args.axis}_summary_{test_id}.csv")
+            
         res_df.to_csv(summary_path, index=False)
         print(f"  Summary saved to: {summary_path}")
     else:

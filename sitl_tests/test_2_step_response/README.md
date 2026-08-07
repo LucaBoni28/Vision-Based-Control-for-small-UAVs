@@ -74,9 +74,7 @@ If you don't want to guess-and-check gains manually, you can use the automated t
 ### 1. Run the Autotuner
 ```bash
 # Example: Tune distance (forward velocity) over a grid of P and D gains
-python3 auto_tune_outer.py --axis dist \
-  --p-min 0.5 --p-max 1.5 --p-step 0.5 \
-  --d-min 0.02 --d-max 0.10 --d-step 0.02
+python auto_tune_outer.py --axis dist --p-min 0.5 --p-max 1.5 --p-step 0.5 --d-min 0.02 --d-max 0.10 --d-step 0.02
 ```
 
 The script will:
@@ -89,7 +87,7 @@ The script will:
 The autotuner will output the file path of the winning CSV log. You can plot it exactly like a manual test by using the `--csv` flag instead of `--axis`:
 
 ```bash
-python3 plot_test_2.py --csv logs/autotune_outer_dist_p0.50_d0.0600_12345.csv
+python plot_test_2.py --csv logs/autotune_outer_dist_p0.50_d0.0600_12345.csv
 ```
 
 **Relevant Autotune Arguments:**

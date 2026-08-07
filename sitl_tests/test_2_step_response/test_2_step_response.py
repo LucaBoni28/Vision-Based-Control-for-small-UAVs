@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument("--step-axis", type=str, default="yaw",
                         choices=["yaw", "alt", "dist"],
                         help="Axis for the step input (default: yaw)")
-    parser.add_argument("--step-magnitude", type=float, default=None,
+    parser.add_argument("--step-magnitude", type=float, default=3,
                         help="Step magnitude: meters for distance/altitude, meters offset for yaw (default: 3.0)")
     parser.add_argument("--initial-distance", type=float, default=None,
                         help="Initial distance to target in meters (default depends on axis: 0.6 for dist, 5.0 for others)")
@@ -58,14 +58,11 @@ def parse_args():
 
 def main():
     args = parse_args()
-
-    # Set smart defaults if not provided
-    if args.step_magnitude is None:
-        args.step_magnitude = 3.0
         
     if args.initial_distance is None:
         if args.step_axis == "dist":
             args.initial_distance = 0.6
+            args.step_magnitude = 1.0
         else:
             args.initial_distance = 5.0
 
@@ -87,6 +84,11 @@ def main():
     run_step_response(args, config, flight)
 
 def run_step_response(args, config, flight, test_id=None):
+    quiet = getattr(args, 'quiet', False)
+    def qprint(*pargs, **kwargs):
+        if not quiet:
+            print(*pargs, **kwargs)
+
     # Wait for position data
     if not wait_for_position_data(flight):
         print("ERROR: No position data. Exiting.")
@@ -108,8 +110,8 @@ def run_step_response(args, config, flight, test_id=None):
     target_y = pos.y + args.initial_distance * math.sin(drone_yaw)
     target_z = pos.z  # Same altitude
 
-    print(f"\nDrone position: ({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}), yaw={math.degrees(drone_yaw):.1f}°")
-    print(f"Initial target: ({target_x:.2f}, {target_y:.2f}, {target_z:.2f})")
+    qprint(f"\nDrone position: ({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}), yaw={math.degrees(drone_yaw):.1f}°")
+    qprint(f"Initial target: ({target_x:.2f}, {target_y:.2f}, {target_z:.2f})")
 
     if args.step_axis == "yaw":
         # Move target laterally (right/starboard) relative to drone heading
@@ -127,7 +129,7 @@ def run_step_response(args, config, flight, test_id=None):
         step_target_y = target_y + args.step_magnitude * math.sin(drone_yaw)
         step_target_z = target_z
 
-    print(f"Stepped target: ({step_target_x:.2f}, {step_target_y:.2f}, {step_target_z:.2f})")
+    qprint(f"Stepped target: ({step_target_x:.2f}, {step_target_y:.2f}, {step_target_z:.2f})")
 
     # Target area for distance control (from calibration)
     from classes.distance_estimator import DistanceEstimator
@@ -151,23 +153,33 @@ def run_step_response(args, config, flight, test_id=None):
     r_stop = c.r_stop
 
     target_area = dist_estimator.target_area(config.calibration.desired_stopping_distance_m)
-    print(f"Target area (stopping distance {config.calibration.desired_stopping_distance_m}m): {target_area:.0f} px²")
+    qprint(f"Target area (stopping distance {config.calibration.desired_stopping_distance_m}m): {target_area:.0f} px²")
 
     if test_id is None:
         # Determine run number for manual test
         import glob
         logs_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-        existing_logs = glob.glob(os.path.join(logs_dir_path, f"test_2_{args.step_axis}_run_*.csv"))
+        existing_logs = glob.glob(os.path.join(logs_dir_path, f"test_2_{args.step_axis}_*.csv"))
         run_numbers = []
         for f in existing_logs:
             try:
-                num = int(f.split("_run_")[-1].split(".")[0])
-                run_numbers.append(num)
+                parts = f.split("_run_")
+                if len(parts) > 1:
+                    num = int(parts[-1].split(".")[0])
+                    run_numbers.append(num)
             except ValueError:
                 pass
         next_run = max(run_numbers) + 1 if run_numbers else 1
         run_id = f"run_{next_run:03d}"
-        csv_filename = f"test_2_{args.step_axis}_{run_id}.csv"
+        
+        if args.step_axis == "dist":
+            csv_filename = f"test_2_{args.step_axis}_p{k_p_vx:.2f}_d{k_d_vx:.4f}_{run_id}.csv"
+        elif args.step_axis == "yaw":
+            csv_filename = f"test_2_{args.step_axis}_p{k_p_yaw:.2f}_d{k_d_yaw:.4f}_{run_id}.csv"
+        elif args.step_axis == "alt":
+            csv_filename = f"test_2_{args.step_axis}_p{k_p_vz:.2f}_d{k_d_vz:.4f}_{run_id}.csv"
+        else:
+            csv_filename = f"test_2_{args.step_axis}_{run_id}.csv"
     else:
         # Autotuner is calling this
         csv_filename = f"autotune_outer_{args.step_axis}_{test_id}.csv"
@@ -193,11 +205,11 @@ def run_step_response(args, config, flight, test_id=None):
     # Current target (starts at initial position)
     cur_target_x, cur_target_y, cur_target_z = target_x, target_y, target_z
 
-    print(f"\nTimeline:")
-    print(f"  [0s – {args.settle_before}s]  Settle on initial target")
-    print(f"  [{args.settle_before}s]         STEP APPLIED")
-    print(f"  [{args.settle_before}s – {total_time}s]  Record step response")
-    print(f"  Total: {total_time}s\n")
+    qprint(f"\nTimeline:")
+    qprint(f"  [0s – {args.settle_before}s]  Settle on initial target")
+    qprint(f"  [{args.settle_before}s]         STEP APPLIED")
+    qprint(f"  [{args.settle_before}s – {total_time}s]  Record step response")
+    qprint(f"  Total: {total_time}s\n")
 
     t_start = time.time()
 
@@ -211,7 +223,7 @@ def run_step_response(args, config, flight, test_id=None):
 
             # Apply step at the right time
             if t_elapsed >= args.settle_before and not step_applied:
-                print(f"\n  >>> STEP APPLIED at t={t_elapsed:.2f}s <<<\n")
+                qprint(f"\n  >>> STEP APPLIED at t={t_elapsed:.2f}s <<<\n")
                 cur_target_x, cur_target_y, cur_target_z = step_target_x, step_target_y, step_target_z
                 step_applied = True
 
@@ -309,9 +321,9 @@ def run_step_response(args, config, flight, test_id=None):
 
             # Print progress every 0.5s
             if int(t_elapsed * 2) != int((t_elapsed - loop_period) * 2):
-                print(f"  t={t_elapsed:6.2f}s [{phase:6s}] | e_x={e_x:7.4f} e_y={e_y:7.4f} "
-                      f"e_area={e_area:7.4f} | vx={v_x:5.2f} vz={v_z:5.2f} ωz={omega_z:5.2f} | "
-                      f"dist={cam_out.distance:.2f}m")
+                qprint(f"  t={t_elapsed:6.2f}s [{phase:6s}] | e_x={e_x:7.4f} e_y={e_y:7.4f} "
+                       f"e_area={e_area:7.4f} | vx={v_x:5.2f} vz={v_z:5.2f} ωz={omega_z:5.2f} | "
+                       f"dist={cam_out.distance:.2f}m")
 
             # Sleep to maintain loop rate
             t_sleep = loop_period - (time.time() - t_now)
@@ -321,14 +333,14 @@ def run_step_response(args, config, flight, test_id=None):
     except KeyboardInterrupt:
         print("\n\nInterrupted by user.")
     finally:
-        print("\nSending stop command...")
+        qprint("\nSending stop command...")
         flight.send_stop()
         logger.close()
 
-    print(f"\n{'=' * 60}")
-    print(f"  TEST 2 STEP RESPONSE COMPLETE")
-    print(f"  Data saved to: {logger.filepath}")
-    print(f"{'=' * 60}")
+    qprint(f"\n{'=' * 60}")
+    qprint(f"  TEST 2 STEP RESPONSE COMPLETE")
+    qprint(f"  Data saved to: {logger.filepath}")
+    qprint(f"{'=' * 60}")
     
     return logger.filepath, args.settle_before
 

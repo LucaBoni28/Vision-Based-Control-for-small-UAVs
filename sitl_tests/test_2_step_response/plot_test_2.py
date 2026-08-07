@@ -98,7 +98,8 @@ def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02, target_va
         overshoot_pct = 0.0
 
     # Settling time: last time the signal exits the ±settling_pct band around the TARGET
-    settling_band = abs(response_range) * settling_pct
+    # Enforce a minimum band of 0.05 to prevent the drone's deadzones from causing infinite settling time (NaN)
+    settling_band = max(abs(response_range) * settling_pct, 0.05)
     within_band = np.abs(sig_step - target_value) <= settling_band
 
     # Find the last time it leaves the band
@@ -114,12 +115,11 @@ def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02, target_va
 
     return {
         "initial_value": initial_value,
-        "final_value": final_value,
-        "steady_state_error": steady_state_error,
+        "peak_value": peak_value,
         "rise_time_s": rise_time_s,
         "settling_time_s": settling_time_s,
         "overshoot_pct": overshoot_pct,
-        "peak_value": peak_value,
+        "steady_state_error": steady_state_error,
         "peak_time_since_step_s": peak_time
     }
 
@@ -166,7 +166,7 @@ def plot_test_2(csv_path, output_dir=None):
         pos_drone, pos_target, pos_label = "drone_z", "target_z", "Down Position (Z)"
         cmd_col, cmd_label = "vz_cmd", ("Vertical Velocity Cmd (vz)", "tab:green")
     else: # dist
-        err_col, err_label = "e_area", ("Distance Error (e_area)", "tab:blue")
+        err_col, err_label = "distance_to_target", ("Distance to Target (m)", "tab:blue")
         pos_drone, pos_target, pos_label = "drone_y", "target_y", "East Position (Y)"
         cmd_col, cmd_label = "vx_cmd", ("Forward Velocity Cmd (vx)", "tab:green")
 
@@ -190,7 +190,8 @@ def plot_test_2(csv_path, output_dir=None):
     ax.set_title(f"Test 2: Step Response — {axis.upper()} Step", fontsize=14, fontweight='bold')
 
     # Compute metrics for the primary error signal
-    metrics = compute_step_metrics(time_s, signal, step_time)
+    target_val = 0.6 if axis == "dist" else 0.0
+    metrics = compute_step_metrics(time_s, signal, step_time, target_value=target_val)
 
     # Annotate settling time band if available
     if metrics.get("final_value") is not None and metrics.get("settling_time_s") is not None:
@@ -256,25 +257,22 @@ def plot_test_2(csv_path, output_dir=None):
         ax.set_xlim([time_s.min(), time_s.max()])
 
     plt.tight_layout()
-    plot_path = os.path.join(plots_dir, f"{plot_basename}_summary.pdf")
+    plot_path = os.path.join(plots_dir, f"{plot_basename}.pdf")
     plt.savefig(plot_path, dpi=150, bbox_inches='tight')
     plt.savefig(plot_path.replace('.pdf', '.png'), dpi=150, bbox_inches='tight')    
     print(f"Saved: {plot_path}")
     plt.close()
 
     # ── Print Metrics ───────────────────────────────────────────────────────
-    print(f"\n{'=' * 60}")
-    print(f"  STEP RESPONSE METRICS — {axis.upper()} STEP")
-    print(f"{'=' * 60}")
-
-    print(f"\n  {err_col}:")
+    print(f"\n{'─' * 50}")
+    print(f"  OUTER LOOP METRICS — {axis.upper()}")
+    print(f"{'─' * 50}")
     for key, value in metrics.items():
         if isinstance(value, float):
-            print(f"    {key:25s}: {value:.4f}")
+            print(f"  {key:25s}: {value:.4f}")
         else:
-            print(f"    {key:25s}: {value}")
-
-    print(f"\n{'=' * 60}")
+            print(f"  {key:25s}: {value}")
+    print(f"{'─' * 50}")
 
     all_metrics = {err_col: metrics}
 
