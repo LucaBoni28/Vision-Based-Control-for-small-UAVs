@@ -17,7 +17,7 @@ import select
 from deep_sort_realtime.deepsort_tracker import DeepSort
 from pymavlink import mavutil
 import argparse
-from graphs_generation.thesis_logger import ThesisLogger
+from graphs_generation.scripts.thesis_logger import ThesisLogger
 
 # Capture the exact start time to align the graph later
 script_start_time = time.time()

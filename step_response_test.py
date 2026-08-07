@@ -22,7 +22,7 @@
 import time
 import math
 from pymavlink import mavutil
-from graphs_generation.thesis_logger import ThesisLogger
+from graphs_generation.scripts.thesis_logger import ThesisLogger
 
 
 # ---- Controller gains  (MUST match tracking.py) ----------------------------
