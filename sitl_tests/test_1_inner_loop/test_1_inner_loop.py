@@ -47,6 +47,26 @@ def parse_args():
     return parser.parse_args()
 
 
+def fetch_param(flight, param_id: str) -> float:
+    """Fetch a parameter from the flight controller via MAVLink."""
+    flight.master.mav.param_request_read_send(
+        flight.target_system, flight.target_component,
+        param_id.encode('utf-8')[:16], -1
+    )
+    start_t = time.time()
+    while time.time() - start_t < 2.0:
+        msg = flight.master.recv_match(type='PARAM_VALUE', blocking=False)
+        if msg:
+            mid = msg.param_id
+            if hasattr(mid, "decode"):
+                mid = mid.decode('utf-8')
+            mid = mid.rstrip('\x00')
+            if mid == param_id:
+                return msg.param_value
+        time.sleep(0.05)
+    return 0.0
+
+
 def main():
     args = parse_args()
 
@@ -69,22 +89,34 @@ def main():
         print("ERROR: No position data. Exiting.")
         return
 
+    # Fetch gains for filename logging
+    if args.axis in ["vx", "vy"]:
+        p_val = fetch_param(flight, "PSC_NE_VEL_P")
+        i_val = fetch_param(flight, "PSC_NE_VEL_I")
+    elif args.axis == "vz":
+        p_val = fetch_param(flight, "PSC_D_VEL_P")
+        i_val = fetch_param(flight, "PSC_D_VEL_I")
+    else:
+        p_val, i_val = 0.0, 0.0
+
     # Determine run number
     import glob
     logs_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-    existing_logs = glob.glob(os.path.join(logs_dir_path, f"test_1_step_{args.axis}_run_*.csv"))
+    existing_logs = glob.glob(os.path.join(logs_dir_path, f"test_1_step_{args.axis}_*.csv"))
     run_numbers = []
     for f in existing_logs:
         try:
-            num = int(f.split("_run_")[-1].split(".")[0])
-            run_numbers.append(num)
+            parts = f.split("_run_")
+            if len(parts) > 1:
+                num = int(parts[-1].split(".")[0])
+                run_numbers.append(num)
         except ValueError:
             pass
     next_run = max(run_numbers) + 1 if run_numbers else 1
     run_id = f"run_{next_run:03d}"
     
     # Prepare CSV logger
-    csv_filename = f"test_1_step_{args.axis}_{run_id}.csv"
+    csv_filename = f"test_1_step_{args.axis}_p{p_val:.2f}_i{i_val:.2f}_{run_id}.csv"
     logger = CSVLogger(csv_filename, [
         "time_s",
         "cmd_vx", "cmd_vy", "cmd_vz",
