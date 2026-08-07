@@ -64,7 +64,7 @@ class ThesisLogger:
         self.headers = self.HEADERS[test_mode]
 
         # Build output path: graphs_generation/logs/<filename>.csv
-        output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
         os.makedirs(output_dir, exist_ok=True)
 
         if tracker_name:

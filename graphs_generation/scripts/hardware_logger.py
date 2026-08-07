@@ -13,7 +13,7 @@ import os
 
 # Pass the algorithm name from the terminal to name the file
 algorithm_name = sys.argv[1] if len(sys.argv) > 1 else "combined"
-output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
 os.makedirs(output_dir, exist_ok=True)
 filename = os.path.join(output_dir, f"{algorithm_name}_hardware_stats.csv")
 

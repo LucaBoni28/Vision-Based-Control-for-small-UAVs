@@ -15,7 +15,7 @@ plt.rcParams.update({
     'font.size': 12
 })
 
-log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
 
 # Define algorithms
 algorithms = ['bytetrack', 'botsort', 'deepsort']
