@@ -26,8 +26,8 @@ from graphs_generation.scripts.thesis_logger import ThesisLogger
 
 
 # ---- Controller gains  (MUST match tracking.py) ----------------------------
-K_p_yaw = 1.0      # Proportional gain for yaw rate
-K_d_yaw = 0.05     # Derivative gain for yaw rate
+K_p_yaw = 0.84     # Proportional gain for yaw rate
+K_d_yaw = 0.0      # Derivative gain for yaw rate
 
 # ---- Camera parameters -----------------------------------------------------
 # IMX219 CSI camera at 1280x960 -> HFOV ~ 62 deg
@@ -36,7 +36,7 @@ CAMERA_HALF_HFOV_RAD = math.radians(CAMERA_HFOV_DEG / 2)   # ~0.54 rad
 
 # ---- Test parameters --------------------------------------------------------
 STEP_SIZE = 0.5     # Normalised error: target at 50% of frame width from centre
-TEST_DURATION = 15  # seconds
+TEST_DURATION = 10  # seconds
 LOOP_RATE = 30      # Hz  (matches camera frame rate)
 
 
@@ -63,7 +63,7 @@ def main():
     # ---- MAVLink connection (same as tracking.py) ---------------------------
     print("\nConnecting to SITL...")
     master = mavutil.mavlink_connection(
-        'udpin:0.0.0.0:14551',
+        'tcp:127.0.0.1:5762',
         source_system=255,
         source_component=191,
     )
