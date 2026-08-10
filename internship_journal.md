@@ -176,3 +176,65 @@ This journal is used to track daily progress, challenges, and solutions to help 
 - **MJPEG HTTP Streaming Support**: Integrated a new `MjpegServer` class into `video_streamer.py` and `main.py` which runs a background HTTP server. This allows for low-latency streaming of the drone's camera feed directly to a phone or web browser over a local network.
 - **Initialization Order Fixes**: Refactored the camera and streamer initialization order in `main.py`. The `CSICameraSource` is now initialized last to prevent GStreamer buffer overflow crashes during startup.
 - **Git Repository Recovery**: Successfully recovered the local git repository and uncommitted index changes after a local git object file corruption.
+
+---
+
+## Week 5 (August 3 - August 9, 2026)
+
+### 🎯 Weekly Goals
+- [x] Tune the PID gains for the UAV's visual tracking using SITL step response tests.
+- [x] Analyze automated grid search and manual tuning data to optimize tracking performance.
+
+### 📝 Daily Log
+
+#### Sunday, August 9
+- **Yaw PID Tuning & Step Response Analysis**: 
+  - Ran extensive step response tests (both automated grid sweeps and manual tuning) to find the optimal PID gains for the yaw axis.
+  - Developed analysis tools to evaluate Rise Time, Overshoot, Settling Time, and Steady-State Error.
+- **The D-Gain Problem (Noise Amplification)**:
+  - **Observation**: Discovered that adding any derivative (D) gain to the yaw controller resulted in highly erratic and "spiky" yaw rate commands (rapidly saturating at ±1.0 rad/s), which is infeasible for actual hardware and would cause severe motor chatter.
+  - **Root Cause**: The controller computes the derivative as a raw finite difference `(e_x - prev_e_x) / dt` on the vision bounding box position. Vision detection inherently has frame-to-frame pixel jitter (detector/tracker noise). Differentiating this raw, unfiltered noisy signal drastically amplifies high-frequency noise.
+  - **Decision**: Concluded that the D-gain is actually detrimental to yaw control in the current implementation without a low-pass filter. Since yaw is the least safety-critical axis (slight overshoot horizontally is acceptable), we opted for a purely Proportional (P-only) control strategy.
+- **Altitude (Vz) & Distance (Vx) PID Tuning**:
+  - Transitioned from Yaw tuning to Altitude and Distance tuning using the SITL step response environment.
+  - Unlike Yaw, P-only controllers for Altitude and Distance resulted in unacceptable and dangerous overshoot (e.g., oscillating past the target altitude or flying past the target distance).
+- **The D-Gain Dilemma (Safety vs. Noise)**:
+  - **Yaw (Horizontal)**: Overshoot is acceptable because passing the target horizontally simply requires a turn to correct; it doesn't cause a crash. Therefore, P-only is fine and avoids noise amplification.
+  - **Altitude (Vertical) & Distance (Forward)**: Overshoot is catastrophic. An altitude overshoot means crashing into the ground, and a distance overshoot means ramming into the tracked target. Therefore, **D-gain is absolutely mandatory** to provide the necessary damping and braking force as the drone approaches the target state.
+  - **The Problem**: Using D-gain on these axes re-introduces the severe noise amplification problem caused by raw vision bounding box jitter, creating "spiky" velocity commands that will wear out motors or destabilize the flight controller.
+- **Future Mitigation Strategies Discussed**:
+  - To safely utilize D-gain without amplifying noise, two primary solutions were identified:
+    1.  **Low-Pass Filter (LPF)**: Implementing a software low-pass filter (like a first-order IIR or moving average) on the vision error signals *before* calculating the derivative, effectively smoothing the frame-to-frame quantization noise.
+    2.  **Square-Root Controller**: Replacing the linear P-controller with a square-root controller (similar to ArduPilot's internal `sqrt_controller`). This provides high gain when far away for speed, but naturally tapers off the gain as the error approaches zero, providing a smooth, critically damped deceleration without relying on a noisy derivative term.
+
+### 💡 Notes for Final Report
+- **PID Tuning for Vision-Based Control**: When tuning PID loops that rely on computer vision for error estimation, the derivative term (D) cannot be used naively. Because vision bounding boxes inherently jitter from frame to frame, a raw derivative `de/dt` acts as a high-pass filter, amplifying this noise into massive command spikes. To use D-gain effectively in vision applications, the derivative term must be processed through a low-pass filter (e.g., a first-order IIR filter) to smooth out frame-to-frame quantization noise before it enters the control equation. For less safety-critical axes like yaw, a well-tuned P-only controller often provides a smoother, more robust, and hardware-friendly response than an unfiltered PD controller.
+- **Axis-Specific Control Strategies**: The severity of this noise problem dictates different control strategies per axis. For less safety-critical axes like Yaw, where overshoot does not cause collisions, a well-tuned P-only controller provides a smoother, more robust response. However, for critical axes like Altitude and Distance, overshoot implies a physical collision (ground or target). Here, the damping effect of the D-gain is mandatory. To achieve this safely on hardware, the raw vision signal must either be passed through a Low-Pass Filter prior to differentiation, or the entire control law must be swapped to a non-linear approach like a Square-Root Controller to achieve natural braking without a derivative term.
+
+---
+
+## Week 6 (August 10 - August 16, 2026)
+
+### 🎯 Weekly Goals
+- [x] Perform frequency response (Bode plot) analysis on the tracking loops to determine bandwidth and phase margin.
+- [x] Correlate frequency-domain metrics (bandwidth/resonance) with time-domain metrics (rise time/overshoot).
+
+### 📝 Daily Log
+
+#### Monday, August 10
+- **Frequency Response Simulation Fixes**: 
+  - **Yaw Target Motion**: Discovered that moving the target along the global Y-axis caused purely forward/backward motion if the drone spawned facing West. Fixed the simulator to move the target laterally relative to the drone's actual heading using a rotation matrix.
+  - **Distance Target Motion**: Found that the drone was saturating its velocity because it was trying to reach a default 0.6m stopping distance while the target spawned at 10m. Temporarily overrode the stopping distance to 10m during distance tests to allow it to track the sine wave properly.
+- **Bode Plot Generation Pitfalls**:
+  - Fixed a "negative amplitude" bug in the SciPy curve fitting script that caused artificial 180-degree jumps in the phase plot.
+  - Implemented phase unwrapping to prevent the phase from teleporting when physical lag drops below -180 degrees.
+- **Velocity Saturation (Non-Linearity)**:
+  - Realized that running a 3.0m amplitude frequency sweep for the distance axis at 0.5 Hz requires a tracking speed of >9.0 m/s. 
+  - Since the drone's `max_vx` is capped at 1.5 m/s, it heavily saturated, invalidating the Bode plot. We learned that frequency response tests must use small amplitudes (e.g., 0.5m for distance) to keep the drone operating in its linear region.
+  - *Note*: Yaw was unaffected by the 3.0m amplitude because a 3m lateral shift at 10m distance is only 0.29 radians, keeping angular velocity well below the 1.0 rad/s limit.
+
+### 💡 Notes for Final Report
+- **The Damping vs. Bandwidth Trade-off**: The frequency response tests beautifully visualized the classic control theory trade-off between speed and stability. In the time-domain (Step Response), a low Proportional gain (e.g., $K_p = 0.3$ for distance) provided excellent damping and prevented overshoot. However, the frequency-domain (Bode Plot) revealed the cost of this damping: extreme sluggishness. The system had a DC gain of -13 dB, meaning it severely under-responded to continuous target movement. If we increase $K_p$ to achieve a wider bandwidth (faster tracking), we will inevitably see a **Resonance Peak** in the Bode plot, which is the exact frequency-domain equivalent of **Overshoot** in the step response. 
+- **Linearity in Bode Plots**: When evaluating control loops via simulation, it is critical to ensure the system remains in its linear region. If the test stimulus (e.g., sine wave amplitude) demands a physical response that exceeds the hardware's saturation limits (like maximum velocity or acceleration), the resulting Bode plot will falsely indicate terrible phase margin and low bandwidth. This is not a failure of the PID tuning, but a failure of the test methodology. Stimulus amplitudes must be calculated mathematically to stay under saturation limits prior to testing.
+- **The Non-Linearity of Vision-Based Distance**: A fundamental discovery was made regarding the use of bounding box Area as a proxy for Distance. Because Area is inversely proportional to the square of the Distance ($A \propto 1/D^2$), the mapping between physical distance error and area error is highly non-linear. At a close hovering distance (e.g., 0.6m), a 1.0m movement causes a massive 86% change in area. At a far hovering distance (10.0m), a 0.5m movement causes only a 10% change in area. Consequently, a linear PID controller tuned perfectly for close-range stability ($K_p = 0.3$) becomes 100x mathematically weaker and entirely sluggish at long ranges. This non-linearity proves that for advanced vision-based control, the distance signal must be linearized (e.g., estimating actual meters using $\sqrt{Area}$) rather than passing raw Area into a linear PID loop.
+- **Future Work - Image-Based Visual Servoing (IBVS)**: To solve the non-linearity of distance tracking without knowing the true physical size of the target, a "Virtual Distance" metric can be introduced. By taking the inverse square root of the bounding box area ($D_v = 1/\sqrt{Area}$), we obtain a signal that is perfectly linear with physical distance (i.e., $D_v \propto D_{physical}$). Calculating the error based on this virtual distance ($e = D_{v,target} - D_{v,current}$) ensures the tracking controller behaves uniformly at all distances. This elegantly eliminates the need for complex gain scheduling or noisy derivative (D) gains for non-linear stabilization, allowing a simple Proportional controller to track targets safely and consistently across the entire operating range.
