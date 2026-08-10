@@ -16,16 +16,17 @@
 ###############################################################################
 
 import argparse
+import argparse
 import math
 import time
 import sys
 import os
 
-# Add parent directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+# Add root directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
-from sitl_tests.virtual_camera import VirtualCamera
-from sitl_tests.sitl_utils import (
+from sitl_tests.utils.virtual_camera import VirtualCamera
+from sitl_tests.utils.sitl_utils import (
     load_config, sitl_connect, sitl_arm_and_takeoff,
     wait_for_position_data, CSVLogger,
 )
@@ -43,28 +44,30 @@ def parse_args():
                         choices=["yaw", "altitude", "distance"],
                         help="Axis for the sinusoidal input (default: yaw)")
     parser.add_argument("--amplitude", type=float, default=3.0,
-                        help="Oscillation amplitude in meters (default: 3.0)")
+                        help="Amplitude of the oscillation (m or deg) (default: 3.0)")
+    parser.add_argument("--initial-distance", type=float, default=None,
+                        help="Initial distance to target in meters (default: 10.0)")
     parser.add_argument("--frequencies", type=str, default=None,
                         help="Comma-separated list of frequencies in Hz (default: logarithmic 0.05–2.0)")
     parser.add_argument("--duration-per-freq", type=float, default=30.0,
                         help="Recording duration per frequency in seconds (default: 30.0)")
     parser.add_argument("--settle-time", type=float, default=10.0,
                         help="Time to settle before each frequency test (s) (default: 10.0)")
-    parser.add_argument("--initial-distance", type=float, default=10.0,
-                        help="Initial distance to target in meters (default: 10.0)")
     parser.add_argument("--takeoff-alt", type=float, default=10.0,
                         help="Takeoff altitude in meters (default: 10.0)")
     parser.add_argument("--loop-rate", type=float, default=20.0,
                         help="Control loop rate in Hz (default: 20.0)")
     parser.add_argument("--single-freq", type=float, default=None,
                         help="Run a single frequency instead of the full sweep")
+    parser.add_argument("--run-name", type=str, default="auto",
+                        help="Subfolder name for grouping logs. 'auto' creates run_001, run_002, etc.")
     return parser.parse_args()
 
 
 def run_single_frequency(flight, config, vcam, target_area,
                          base_target_x, base_target_y, base_target_z,
                          freq_hz, amplitude, axis, duration, settle_time,
-                         loop_rate):
+                         loop_rate, run_name):
     """
     Run a single frequency experiment: oscillate the target and record the response.
 
@@ -87,7 +90,7 @@ def run_single_frequency(flight, config, vcam, target_area,
     print(f"{'─' * 50}")
 
     # Prepare CSV
-    csv_filename = f"test_3_bode_{axis}_{freq_hz:.3f}Hz.csv"
+    csv_filename = os.path.join(run_name, f"test_3_bode_{axis}_{freq_hz:.3f}Hz.csv")
     logger = CSVLogger(csv_filename, [
         "time_s", "phase",
         "input_signal",  # The sinusoidal input (target offset in meters)
@@ -139,9 +142,12 @@ def run_single_frequency(flight, config, vcam, target_area,
 
             # Apply offset to the appropriate axis
             if axis == "yaw":
-                # Move target laterally (East)
-                cur_target_x = base_target_x
-                cur_target_y = base_target_y + input_signal
+                # Move target laterally (right/starboard) relative to drone heading
+                # To move laterally, we use perpendicular vector: (-sin(yaw), cos(yaw))
+                att = flight.poll_attitude()
+                yaw = att.yaw
+                cur_target_x = base_target_x - input_signal * math.sin(yaw)
+                cur_target_y = base_target_y + input_signal * math.cos(yaw)
                 cur_target_z = base_target_z
             elif axis == "altitude":
                 # Move target vertically (negative = up in NED)
@@ -150,7 +156,6 @@ def run_single_frequency(flight, config, vcam, target_area,
                 cur_target_z = base_target_z - input_signal
             elif axis == "distance":
                 # Move target along the forward axis
-                # Use drone's initial heading to compute forward direction
                 att = flight.poll_attitude()
                 yaw = att.yaw
                 cur_target_x = base_target_x + input_signal * math.cos(yaw)
@@ -217,6 +222,17 @@ def run_single_frequency(flight, config, vcam, target_area,
             v_z = max(min(v_z, config.control.max_vz), -config.control.max_vz)
             omega_z = max(min(omega_z, config.control.max_yaw_rate), -config.control.max_yaw_rate)
 
+            # Isolate the test axis to avoid coupling dynamics
+            if axis == "yaw":
+                v_x = 0.0
+                v_z = 0.0
+            elif axis == "altitude":
+                v_x = 0.0
+                omega_z = 0.0
+            elif axis == "distance":
+                v_z = 0.0
+                omega_z = 0.0
+
             # Send velocity command
             flight.send_velocity(v_x, 0.0, v_z, omega_z)
 
@@ -270,9 +286,26 @@ def main():
     else:
         frequencies = DEFAULT_FREQUENCIES
 
+    # Determine auto run_name
+    if args.run_name == "auto":
+        import glob
+        logs_base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", args.axis)
+        existing_runs = glob.glob(os.path.join(logs_base_dir, "run_*"))
+        run_numbers = []
+        for r in existing_runs:
+            dirname = os.path.basename(r)
+            try:
+                num = int(dirname.split("_")[1])
+                run_numbers.append(num)
+            except (IndexError, ValueError):
+                pass
+        next_run = max(run_numbers) + 1 if run_numbers else 1
+        args.run_name = f"run_{next_run:03d}"
+
     print("=" * 60)
     print("  TEST 3: FREQUENCY RESPONSE / BODE PLOT")
     print(f"  Axis: {args.axis} | Amplitude: {args.amplitude}m")
+    print(f"  Run Directory: {args.run_name}")
     print(f"  Frequencies: {frequencies}")
     print(f"  Duration per frequency: {args.duration_per_freq}s + {args.settle_time}s settle")
     print(f"  Total estimated time: {len(frequencies) * (args.duration_per_freq + args.settle_time):.0f}s")
@@ -280,6 +313,13 @@ def main():
 
     # Load config and connect
     config = load_config()
+
+    # Determine initial distance
+    base_dist = args.initial_distance if args.initial_distance is not None else 10.0
+
+    # Ensure the drone tries to hover at the base distance, so it doesn't saturate flying forward
+    config.calibration.desired_stopping_distance_m = base_dist
+
     flight = sitl_connect(config)
 
     # Arm and take off
@@ -304,8 +344,8 @@ def main():
     drone_yaw = attitude.yaw
 
     # Place base target in front of the drone
-    base_target_x = pos.x + args.initial_distance * math.cos(drone_yaw)
-    base_target_y = pos.y + args.initial_distance * math.sin(drone_yaw)
+    base_target_x = pos.x + base_dist * math.cos(drone_yaw)
+    base_target_y = pos.y + base_dist * math.sin(drone_yaw)
     base_target_z = pos.z  # Same altitude
 
     print(f"\nDrone position: ({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f})")
@@ -345,6 +385,7 @@ def main():
                 duration=args.duration_per_freq,
                 settle_time=args.settle_time,
                 loop_rate=args.loop_rate,
+                run_name=os.path.join(args.axis, args.run_name),
             )
             output_files.append(filepath)
 
