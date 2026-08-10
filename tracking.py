@@ -59,13 +59,25 @@ master.mav.request_data_stream_send(
 )
 current_pitch_rad = 0
 
-# Control parameters
-K_p_yaw = 1     # Proportional gain for yaw rate
-K_d_yaw = 0.05  # Derivative gain for yaw rate
-K_p_vz = 1      # Proportional gain for vertical velocity
-K_d_vz = 0.05   # Derivative gain for vertical velocity
-K_p_vx = 1       # Maximum forward velocity in m/s
-R_stop = 0.8    # Radius of stop forward velocity v_x
+# Control parameters (must match config.yaml / mission_controller.py)
+K_p_yaw = 0.84                   # Proportional gain for yaw rate
+K_d_yaw = 0.0                    # Derivative gain for yaw rate
+K_p_vz = 0.8                     # Proportional gain for vertical velocity
+K_d_vz = 0.31                    # Derivative gain for vertical velocity
+K_p_vx = 1.0                     # Proportional gain for forward velocity
+K_d_vx = 0.06                    # Derivative gain for forward velocity
+R_stop = 0.8                     # Stop ratio for v_x limiting
+
+# Deadzones (must match config.yaml / mission_controller.py)
+YAW_DEADZONE = 0.03              # Minimum yaw rate output to act upon
+VZ_DEADZONE = 0.03               # Minimum vz output to act upon
+AREA_DEADZONE = 0.05             # Minimum area error to act upon
+MAX_DERIVATIVE_DT = 0.5          # Maximum delta time for derivative calculation
+
+# Velocity limits (must match config.yaml / mission_controller.py)
+MAX_VX = 1.5                     # Maximum forward velocity limit (m/s)
+MAX_VZ = 1.0                     # Maximum vertical velocity limit (m/s)
+MAX_YAW_RATE = 1.0               # Maximum yaw rate limit (rad/s)
 
 # Load YOLOv8 compiled as a TensorRT Engine for maximum GPU efficiency
 model = YOLO('yolo26n.engine', task='detect')
@@ -116,6 +128,7 @@ locked_id = None
 timeout_frames = 0   
 prev_error_y = 0   
 prev_error_x = 0   
+prev_error_area = 0
 prev_time = time.time()
 prev_time_fps = 0
 
@@ -251,57 +264,69 @@ while cap.isOpened():
             e_y = error_y / CENTER_Y
             e_y_compensated = e_y - math.tan(current_pitch_rad)
 
+            # Calculate bounding box area and area error for distance control
+            w = x2 - x1
+            h = y2 - y1
+            current_area = w * h
+
+            e_area = (TARGET_AREA - current_area) / TARGET_AREA
+
             # Calculate the error magnitude
             e_mag = math.sqrt(e_x**2 + e_y_compensated**2)
             e_mag = min(1.0, e_mag)
 
-            # Calculate the delta t
+            # Derivative (Rate of Change) Calculation
+            # Calculates how fast the error is changing. This helps prevent overshooting the target.
             current_time = time.time()
             dt = current_time - prev_time
 
-            # Calculate the derivative
-            if 0 < dt < 0.5:
+            if 0 < dt < MAX_DERIVATIVE_DT:
                 derivative_y = (e_y_compensated - prev_error_y) / dt
                 derivative_x = (e_x - prev_error_x) / dt
+                derivative_area = (e_area - prev_error_area) / dt
             else:
                 derivative_y = 0
                 derivative_x = 0
+                derivative_area = 0
 
-            # Implementation PD controller for omega_z and v_z
+            # Apply the PD Controller Equations
+            # PD Formula: Output = (Proportional_Gain * Error) + (Derivative_Gain * Derivative_Error)
+
+            # Yaw (Turn): Centers the target horizontally
             omega_z = K_p_yaw * e_x + K_d_yaw * derivative_x
+
+            # Z-Velocity (Altitude): Centers the target vertically
             v_z = K_p_vz * e_y_compensated + K_d_vz * derivative_y
-            
-            # Deadzone for velocities avoiding micro movements
-            if abs(omega_z) < 0.03:
+
+            # X-Velocity (Forward/Backward): Keeps the target at the right distance
+            v_x_request = K_p_vx * e_area + K_d_vx * derivative_area
+
+            # Deadzones & Safety Limits
+            # Deadzones prevent the drone from twitching when it's "close enough"
+            if abs(omega_z) < YAW_DEADZONE:
                 omega_z = 0
-            if abs(v_z) < 0.03:
+            if abs(v_z) < VZ_DEADZONE:
                 v_z = 0
-            
-            # Setting forward velocity
-            w = x2 - x1
-            h = y2 - y1
-            current_area = w*h
-            # print(f"Area: {current_area}")
-
-            e_area = (TARGET_AREA - current_area) / TARGET_AREA
-            v_x_request = K_p_vx * e_area
-
-            # Distance deadzone: target area
-            if abs(e_area) < 0.05:
+            if abs(e_area) < AREA_DEADZONE:
                 v_x_request = 0.0
 
-            # Speed limit for center alignment
-            if e_mag >= R_stop:
-                v_x_limit = 0.0 # Stop drone if target close to the edge
+            # Speed Limit: If the target is way off center (e_mag >= r_stop),
+            # stop moving forward until we yaw/climb to center it first.
+            e_scaled = min(1.0, e_mag / R_stop)
+            if e_scaled >= 1.0:
+                v_x_limit = 0.0
             else:
-                e_scaled = e_mag / R_stop
-                v_x_limit = K_p_vx * (1 - e_scaled**2)
+                v_x_limit = MAX_VX * (1 - e_scaled**2)
 
-            #  Choosing the safest value of velocity
+            # Apply the calculated speed limit to the requested forward velocity
             if v_x_request > 0:
                 v_x = min(v_x_request, v_x_limit)
             else:
                 v_x = max(v_x_request, -v_x_limit)
+
+            # Standard clipping for other axes
+            v_z = max(min(v_z, MAX_VZ), -MAX_VZ)
+            omega_z = max(min(omega_z, MAX_YAW_RATE), -MAX_YAW_RATE)
 
             print(f"Pitch: {current_pitch_rad*180/3.14:.2f} deg | Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
 
@@ -335,6 +360,7 @@ while cap.isOpened():
             # Update the memory states
             prev_error_y = e_y_compensated
             prev_error_x = e_x
+            prev_error_area = e_area
             prev_time = current_time
 
             # Visual GUI Debugging
