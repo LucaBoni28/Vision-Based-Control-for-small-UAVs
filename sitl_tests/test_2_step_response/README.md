@@ -62,7 +62,7 @@ Open `classes/config.yaml` and locate the `control:` section. Modify the gains b
 **test_2_step_response.py**
 - `--step-axis {yaw,alt,dist}`: (Required) Which axis to isolate and test.
 - `--step-magnitude FLOAT`: How far to abruptly move the target (meters). Default: `3.0`
-- `--initial-distance FLOAT`: Starting distance between drone and target (meters). Default: `0.6` for dist, `5.0` for yaw/alt.
+- `--initial-distance FLOAT`: Starting distance between drone and target (meters). Default: `5.0`.
 - `--settle-before FLOAT`: Time (in seconds) to let the drone stabilize on the target before the step occurs. Default: `5.0`
 - `--record-after FLOAT`: Time (in seconds) to record data after the step occurs. Default: `10.0`
 

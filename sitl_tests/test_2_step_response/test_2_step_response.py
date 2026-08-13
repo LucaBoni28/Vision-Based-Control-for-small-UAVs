@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument("--step-magnitude", type=float, default=3,
                         help="Step magnitude: meters for distance/altitude, meters offset for yaw (default: 3.0)")
     parser.add_argument("--initial-distance", type=float, default=None,
-                        help="Initial distance to target in meters (default depends on axis: 0.6 for dist, 5.0 for others)")
+                        help="Initial distance to target in meters")
     parser.add_argument("--settle-before", type=float, default=5.0,
                         help="Time to let PD settle on initial target before step (s) (default: 5.0)")
     parser.add_argument("--record-after", type=float, default=10.0,
