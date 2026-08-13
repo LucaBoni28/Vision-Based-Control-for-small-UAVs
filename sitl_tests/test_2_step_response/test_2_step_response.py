@@ -187,15 +187,36 @@ def run_step_response(args, config, flight, test_id=None):
         "time_s", "phase",
         "target_x", "target_y", "target_z",
         "drone_x", "drone_y", "drone_z", "drone_yaw_deg",
-        "e_x", "e_y", "e_area", "e_mag",
+        "e_x", "e_y", "e_dist_m", "e_mag",
         "vx_cmd", "vz_cmd", "omega_z_cmd",
         "distance_to_target",
     ])
+    
+    # Save metadata
+    meta_filename = csv_filename.replace(".csv", "_metadata.txt")
+    logs_dir_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(logs_dir_path, exist_ok=True)
+    with open(os.path.join(logs_dir_path, meta_filename), "w") as f:
+        f.write("TEST 2: STEP RESPONSE\n")
+        f.write("=" * 30 + "\n")
+        f.write(f"Step Axis: {args.step_axis}\n")
+        f.write(f"Magnitude: {args.step_magnitude}\n")
+        f.write(f"Initial Distance: {args.initial_distance} m\n")
+        f.write("\nCONTROL GAINS (from config)\n")
+        f.write("=" * 30 + "\n")
+        f.write(f"k_p_vx: {config.control.k_p_vx}\n")
+        f.write(f"k_d_vx: {config.control.k_d_vx}\n")
+        f.write(f"dist_deadzone: {config.control.dist_deadzone}\n")
+        f.write(f"k_p_yaw: {config.control.k_p_yaw}\n")
+        f.write(f"k_p_vz: {config.control.k_p_vz}\n")
+
+    
+    print(f"Starting test. Step will occur at T = {args.settle_before}s")
 
     # PD state
     prev_e_x = 0.0
     prev_e_y = 0.0
-    prev_e_area = 0.0
+    prev_e_dist = 0.0
     prev_time = time.time()
 
     loop_period = 1.0 / args.loop_rate
@@ -248,7 +269,7 @@ def run_step_response(args, config, flight, test_id=None):
 
             e_x = cam_out.e_x
             e_y = cam_out.e_y
-            e_area = (target_area - cam_out.fake_area) / target_area
+            e_dist_m = cam_out.distance - config.calibration.desired_stopping_distance_m
             e_mag = min(1.0, math.sqrt(e_x**2 + e_y**2))
 
             # PD derivative calculation
@@ -256,21 +277,21 @@ def run_step_response(args, config, flight, test_id=None):
             if 0 < dt < config.control.max_derivative_dt:
                 d_x = (e_x - prev_e_x) / dt
                 d_y = (e_y - prev_e_y) / dt
-                d_area = (e_area - prev_e_area) / dt
+                d_dist = (e_dist_m - prev_e_dist) / dt
             else:
-                d_x = d_y = d_area = 0.0
+                d_x = d_y = d_dist = 0.0
 
             # PD control output
             omega_z = k_p_yaw * e_x + k_d_yaw * d_x
             v_z = k_p_vz * e_y + k_d_vz * d_y
-            v_x_request = k_p_vx * e_area + k_d_vx * d_area
+            v_x_request = k_p_vx * e_dist_m + k_d_vx * d_dist
 
             # Deadzones
             if abs(omega_z) < config.control.yaw_deadzone:
                 omega_z = 0.0
             if abs(v_z) < config.control.vz_deadzone:
                 v_z = 0.0
-            if abs(e_area) < config.control.area_deadzone:
+            if abs(e_dist_m) < config.control.dist_deadzone:
                 v_x_request = 0.0
 
             # Velocity limits (coupled limiting for safety)
@@ -308,7 +329,7 @@ def run_step_response(args, config, flight, test_id=None):
                 f"{t_elapsed:.4f}", phase,
                 f"{cur_target_x:.4f}", f"{cur_target_y:.4f}", f"{cur_target_z:.4f}",
                 f"{pos.x:.4f}", f"{pos.y:.4f}", f"{pos.z:.4f}", f"{math.degrees(drone_yaw):.2f}",
-                f"{e_x:.6f}", f"{e_y:.6f}", f"{e_area:.6f}", f"{e_mag:.6f}",
+                f"{e_x:.6f}", f"{e_y:.6f}", f"{e_dist_m:.6f}", f"{e_mag:.6f}",
                 f"{v_x:.4f}", f"{v_z:.4f}", f"{omega_z:.4f}",
                 f"{cam_out.distance:.4f}",
             )
@@ -316,13 +337,13 @@ def run_step_response(args, config, flight, test_id=None):
             # Update PD memory
             prev_e_x = e_x
             prev_e_y = e_y
-            prev_e_area = e_area
+            prev_e_dist = e_dist_m
             prev_time = t_now
 
             # Print progress every 0.5s
             if int(t_elapsed * 2) != int((t_elapsed - loop_period) * 2):
                 qprint(f"  t={t_elapsed:6.2f}s [{phase:6s}] | e_x={e_x:7.4f} e_y={e_y:7.4f} "
-                       f"e_area={e_area:7.4f} | vx={v_x:5.2f} vz={v_z:5.2f} ωz={omega_z:5.2f} | "
+                       f"e_dist={e_dist_m:7.4f} | vx={v_x:5.2f} vz={v_z:5.2f} ωz={omega_z:5.2f} | "
                        f"dist={cam_out.distance:.2f}m")
 
             # Sleep to maintain loop rate

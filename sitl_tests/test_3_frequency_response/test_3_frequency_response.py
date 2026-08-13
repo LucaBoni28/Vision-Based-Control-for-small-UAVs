@@ -96,7 +96,7 @@ def run_single_frequency(flight, config, vcam, target_area,
         "input_signal",  # The sinusoidal input (target offset in meters)
         "target_x", "target_y", "target_z",
         "drone_x", "drone_y", "drone_z", "drone_yaw_deg",
-        "e_x", "e_y", "e_area", "e_mag",
+        "e_x", "e_y", "e_dist_m", "e_mag",
         "vx_cmd", "vz_cmd", "omega_z_cmd",
         "distance_to_target",
     ])
@@ -114,7 +114,7 @@ def run_single_frequency(flight, config, vcam, target_area,
     # PD state
     prev_e_x = 0.0
     prev_e_y = 0.0
-    prev_e_area = 0.0
+    prev_e_dist = 0.0
     prev_time = time.time()
 
     loop_period = 1.0 / loop_rate
@@ -181,7 +181,7 @@ def run_single_frequency(flight, config, vcam, target_area,
 
             e_x = cam_out.e_x
             e_y = cam_out.e_y
-            e_area = (target_area - cam_out.fake_area) / target_area
+            e_dist_m = cam_out.distance - config.calibration.desired_stopping_distance_m
             e_mag = min(1.0, math.sqrt(e_x**2 + e_y**2))
 
             # PD derivative
@@ -189,21 +189,21 @@ def run_single_frequency(flight, config, vcam, target_area,
             if 0 < dt < config.control.max_derivative_dt:
                 d_x = (e_x - prev_e_x) / dt
                 d_y = (e_y - prev_e_y) / dt
-                d_area = (e_area - prev_e_area) / dt
+                d_dist = (e_dist_m - prev_e_dist) / dt
             else:
-                d_x = d_y = d_area = 0.0
+                d_x = d_y = d_dist = 0.0
 
             # PD control output
             omega_z = k_p_yaw * e_x + k_d_yaw * d_x
             v_z = k_p_vz * e_y + k_d_vz * d_y
-            v_x_request = k_p_vx * e_area + k_d_vx * d_area
+            v_x_request = k_p_vx * e_dist_m + k_d_vx * d_dist
 
             # Deadzones
             if abs(omega_z) < config.control.yaw_deadzone:
                 omega_z = 0.0
             if abs(v_z) < config.control.vz_deadzone:
                 v_z = 0.0
-            if abs(e_area) < config.control.area_deadzone:
+            if abs(e_dist_m) < config.control.dist_deadzone:
                 v_x_request = 0.0
 
             # Velocity limits (coupled limiting for safety)
@@ -242,7 +242,7 @@ def run_single_frequency(flight, config, vcam, target_area,
                 f"{input_signal:.6f}",
                 f"{cur_target_x:.4f}", f"{cur_target_y:.4f}", f"{cur_target_z:.4f}",
                 f"{pos.x:.4f}", f"{pos.y:.4f}", f"{pos.z:.4f}", f"{math.degrees(drone_yaw):.2f}",
-                f"{e_x:.6f}", f"{e_y:.6f}", f"{e_area:.6f}", f"{e_mag:.6f}",
+                f"{e_x:.6f}", f"{e_y:.6f}", f"{e_dist_m:.6f}", f"{e_mag:.6f}",
                 f"{v_x:.4f}", f"{v_z:.4f}", f"{omega_z:.4f}",
                 f"{cam_out.distance:.4f}",
             )
@@ -250,7 +250,7 @@ def run_single_frequency(flight, config, vcam, target_area,
             # Update PD memory
             prev_e_x = e_x
             prev_e_y = e_y
-            prev_e_area = e_area
+            prev_e_dist = e_dist_m
             prev_time = t_now
 
             # Print progress every 1s
@@ -319,6 +319,25 @@ def main():
 
     # Ensure the drone tries to hover at the base distance, so it doesn't saturate flying forward
     config.calibration.desired_stopping_distance_m = base_dist
+    
+    # Save test metadata to the run directory
+    logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs", args.axis, args.run_name)
+    os.makedirs(logs_dir, exist_ok=True)
+    with open(os.path.join(logs_dir, "metadata.txt"), "w") as f:
+        f.write("TEST 3: FREQUENCY RESPONSE\n")
+        f.write("=" * 30 + "\n")
+        f.write(f"Axis: {args.axis}\n")
+        f.write(f"Amplitude: {args.amplitude}\n")
+        f.write(f"Initial Distance: {base_dist} m\n")
+        f.write(f"Frequencies: {frequencies}\n")
+        f.write("\nCONTROL GAINS (from config)\n")
+        f.write("=" * 30 + "\n")
+        f.write(f"k_p_vx: {config.control.k_p_vx}\n")
+        f.write(f"k_d_vx: {config.control.k_d_vx}\n")
+        f.write(f"dist_deadzone: {config.control.dist_deadzone}\n")
+        f.write(f"k_p_yaw: {config.control.k_p_yaw}\n")
+        f.write(f"k_p_vz: {config.control.k_p_vz}\n")
+    
 
     flight = sitl_connect(config)
 
@@ -332,24 +351,6 @@ def main():
         print("ERROR: No position data. Exiting.")
         return
 
-    # Get initial position for target placement
-    flight.poll_heartbeat()
-    pos = flight.poll_local_position_ned()
-    attitude = flight.poll_attitude()
-
-    if pos is None:
-        print("ERROR: Cannot read initial position. Exiting.")
-        return
-
-    drone_yaw = attitude.yaw
-
-    # Place base target in front of the drone
-    base_target_x = pos.x + base_dist * math.cos(drone_yaw)
-    base_target_y = pos.y + base_dist * math.sin(drone_yaw)
-    base_target_z = pos.z  # Same altitude
-
-    print(f"\nDrone position: ({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f})")
-    print(f"Base target: ({base_target_x:.2f}, {base_target_y:.2f}, {base_target_z:.2f})")
 
     # Create virtual camera
     vcam = VirtualCamera(
@@ -370,6 +371,25 @@ def main():
             print(f"\n{'=' * 60}")
             print(f"  Frequency {i+1}/{len(frequencies)}: {freq} Hz")
             print(f"{'=' * 60}")
+
+            # Get current position for target placement
+            flight.poll_heartbeat()
+            pos = flight.poll_local_position_ned()
+            attitude = flight.poll_attitude()
+
+            if pos is None:
+                print("ERROR: Cannot read position for target placement. Exiting sweep.")
+                break
+
+            drone_yaw = attitude.yaw
+
+            # Place base target in front of the drone based on its *current* position
+            base_target_x = pos.x + base_dist * math.cos(drone_yaw)
+            base_target_y = pos.y + base_dist * math.sin(drone_yaw)
+            base_target_z = pos.z  # Same altitude
+
+            print(f"  Drone starts at: ({pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f})")
+            print(f"  Base target at: ({base_target_x:.2f}, {base_target_y:.2f}, {base_target_z:.2f})")
 
             filepath = run_single_frequency(
                 flight=flight,

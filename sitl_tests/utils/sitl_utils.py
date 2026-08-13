@@ -11,7 +11,7 @@ import csv
 import time
 
 # Add parent directory to path so we can import classes.*
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 from classes.config import AppConfig
 from classes.flight_controller import FlightController
@@ -38,9 +38,8 @@ class CSVLogger:
             caller_dir = os.getcwd()
             
         output_dir = os.path.join(caller_dir, "logs")
-        os.makedirs(output_dir, exist_ok=True)
-
         self.filepath = os.path.join(output_dir, filename)
+        os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
         self._file = open(self.filepath, "w", newline="")
         self._writer = csv.writer(self._file)
         self._writer.writerow(headers)
@@ -70,7 +69,9 @@ def load_config(config_path: str = None) -> AppConfig:
             print(f"Using local config override: {config_path}")
         else:
             config_path = os.path.join(project_root, "classes", "config.yaml")
-    return AppConfig.load(config_path)
+    cfg = AppConfig.load(config_path)
+    cfg._loaded_from = config_path
+    return cfg
 
 
 def sitl_connect(config: AppConfig = None, config_path: str = None) -> FlightController:

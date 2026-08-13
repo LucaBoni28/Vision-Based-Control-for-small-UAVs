@@ -142,13 +142,14 @@ def compute_gain_phase(csv_path, freq_hz, axis="yaw"):
     try:
         # Initial guess
         p0_in = [np.max(np.abs(input_signal)), freq_hz, 0.0, np.mean(input_signal)]
+        bounds_in = (
+            [0, freq_hz * 0.99, -np.inf, -np.inf],
+            [np.inf, freq_hz * 1.01, np.inf, np.inf]
+        )
         popt_in, _ = curve_fit(sine_model, t_rel, input_signal, p0=p0_in,
-                               maxfev=10000)
+                               bounds=bounds_in, maxfev=10000)
         input_amp = popt_in[0]
         input_phase = popt_in[2]
-        if input_amp < 0:
-            input_amp = -input_amp
-            input_phase += np.pi
     except Exception as e:
         print(f"  WARNING: Could not fit input sinusoid at {freq_hz} Hz: {e}")
         # Fallback: use FFT
@@ -158,13 +159,14 @@ def compute_gain_phase(csv_path, freq_hz, axis="yaw"):
     # Fit sinusoid to output signal
     try:
         p0_out = [np.max(np.abs(output_signal)) * 0.5, freq_hz, 0.0, np.mean(output_signal)]
+        bounds_out = (
+            [0, freq_hz * 0.99, -np.inf, -np.inf],
+            [np.inf, freq_hz * 1.01, np.inf, np.inf]
+        )
         popt_out, _ = curve_fit(sine_model, t_rel, output_signal, p0=p0_out,
-                                maxfev=10000)
+                                bounds=bounds_out, maxfev=10000)
         output_amp = popt_out[0]
         output_phase = popt_out[2]
-        if output_amp < 0:
-            output_amp = -output_amp
-            output_phase += np.pi
     except Exception as e:
         print(f"  WARNING: Could not fit output sinusoid at {freq_hz} Hz: {e}")
         # Fallback: FFT-based

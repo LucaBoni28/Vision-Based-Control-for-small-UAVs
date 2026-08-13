@@ -45,6 +45,7 @@ Open `classes/config.yaml` and locate the `control:` section. Modify the gains b
 
 - **If the response is too slow (high Rise Time):** Increase the Proportional Gain (`k_p`).
 - **If the response overshoots heavily or oscillates:** Increase the Derivative Gain (`k_d`) to add damping, or slightly reduce `k_p`.
+  > **⚠️ Vision Noise Caveat:** Be extremely careful with `k_d` when the error signal comes directly from raw bounding box pixel coordinates. Vision detection inherently has frame-to-frame jitter. Because the controller computes the derivative as a raw finite difference (`de/dt`), applying a `k_d` gain will heavily amplify this high-frequency noise into erratic, "spiky" motor commands. For axes where slight overshoot is acceptable (like **yaw**), a well-tuned **P-only controller (`k_d = 0`)** provides a much smoother and hardware-friendly response.
 - **If the drone never fully reaches the target:** The deadzone might be too large, or you might need to adjust the `k_p` gain.
 
 **Relevant Gains by Axis:**
@@ -73,8 +74,12 @@ If you don't want to guess-and-check gains manually, you can use the automated t
 
 ### 1. Run the Autotuner
 ```bash
-# Example: Tune distance (forward velocity) over a grid of P and D gains
+```bash
+# Example 1: Tune distance (forward velocity) over a grid of P and D gains
 python auto_tune_outer.py --axis dist --p-min 0.5 --p-max 1.5 --p-step 0.5 --d-min 0.02 --d-max 0.10 --d-step 0.02
+
+# Example 2: P-only sweep for yaw (forcing D=0 to avoid noise amplification)
+python auto_tune_outer.py --axis yaw --p-min 0.75 --p-max 0.95 --p-step 0.025 --d-min 0 --d-max 0 --d-step 1
 ```
 
 The script will:

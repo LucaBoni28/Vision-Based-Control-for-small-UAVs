@@ -21,6 +21,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
+# Add project root to sys.path to import config
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+from sitl_tests.utils.sitl_utils import load_config
+
 
 def find_latest_csv(axis=None):
     """Find the most recent Test 2 CSV file."""
@@ -190,7 +196,8 @@ def plot_test_2(csv_path, output_dir=None):
     ax.set_title(f"Test 2: Step Response — {axis.upper()} Step", fontsize=14, fontweight='bold')
 
     # Compute metrics for the primary error signal
-    target_val = 0.6 if axis == "dist" else 0.0
+    config = load_config()
+    target_val = config.calibration.desired_stopping_distance_m if axis == "dist" else 0.0
     metrics = compute_step_metrics(time_s, signal, step_time, target_value=target_val)
 
     # Annotate settling time band if available
@@ -215,9 +222,9 @@ def plot_test_2(csv_path, output_dir=None):
     elif axis == "dist":
         # Plot Measured Distance to Target vs Desired Distance
         measured_dist = df["distance_to_target"]
-        desired_dist = np.full_like(time_s, 0.6) # 0.6m stopping distance
+        desired_dist = np.full_like(time_s, config.calibration.desired_stopping_distance_m) 
         ax.plot(time_s, measured_dist, color="tab:orange", linewidth=1.5, label="Measured Distance to Target", alpha=0.9)
-        ax.plot(time_s, desired_dist, 'r--', linewidth=2, label="Desired Stopping Distance", alpha=0.8)
+        ax.plot(time_s, desired_dist, 'r--', linewidth=2, label=f"Desired Distance ({config.calibration.desired_stopping_distance_m}m)", alpha=0.8)
         ax.set_ylabel("Distance (m)", fontsize=11)
     elif axis == "alt":
         # Plot Target Altitude vs Drone Altitude (NED down is negative, so invert for altitude)

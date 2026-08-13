@@ -26,6 +26,15 @@ from sitl_tests.test_2_step_response.plot_test_2 import compute_step_metrics
 from sitl_tests.test_2_step_response.test_2_step_response import run_step_response
 
 
+def remove_test_files(csv_path):
+    """Helper to remove both the CSV and its associated metadata file."""
+    if csv_path and os.path.exists(csv_path):
+        os.remove(csv_path)
+    if csv_path:
+        meta_path = csv_path.replace(".csv", "_metadata.txt")
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Automated Outer Loop Tuner (Vision PID)"
@@ -157,7 +166,7 @@ def main():
                     config.control.k_p_vx = p
                     config.control.k_d_vx = d
                     err_col = "distance_to_target"
-                    target_val = 0.6
+                    target_val = config.calibration.desired_stopping_distance_m
                 elif args.axis == "yaw":
                     config.control.k_p_yaw = p
                     config.control.k_d_yaw = d
@@ -197,14 +206,14 @@ def main():
                     # Target loss condition (e_area near +/- 1.0 or +/- 2.0 when bounds are hit)
                     if ss_err > 0.5:
                         print("  Result -> FAILED (TARGET LOST OR HUGE STEADY STATE ERROR)")
-                        os.remove(csv_path)
+                        remove_test_files(csv_path)
                         test_num += 1
                         continue
                         
                     import math
                     if math.isnan(st) or math.isnan(rt):
                         print("  Result -> FAILED TO SETTLE (nan metrics)")
-                        os.remove(csv_path)
+                        remove_test_files(csv_path)
                         test_num += 1
                         continue
 
@@ -224,15 +233,15 @@ def main():
                     
                     # Keep only the best CSV file on disk to save space
                     if cost < best_cost:
-                        if best_file is not None and os.path.exists(best_file):
-                            os.remove(best_file)
+                        if best_file is not None:
+                            remove_test_files(best_file)
                         best_cost = cost
                         best_file = csv_path
                     else:
-                        os.remove(csv_path)
+                        remove_test_files(csv_path)
                 else:
                     print("  Result -> FAILED TO SETTLE")
-                    os.remove(csv_path)
+                    remove_test_files(csv_path)
                     
                 test_num += 1
                 
