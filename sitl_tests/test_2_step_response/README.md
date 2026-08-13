@@ -74,7 +74,6 @@ If you don't want to guess-and-check gains manually, you can use the automated t
 
 ### 1. Run the Autotuner
 ```bash
-```bash
 # Example 1: Tune distance (forward velocity) over a grid of P and D gains
 python auto_tune_outer.py --axis dist --p-min 0.5 --p-max 1.5 --p-step 0.5 --d-min 0.02 --d-max 0.10 --d-step 0.02
 
