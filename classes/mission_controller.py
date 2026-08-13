@@ -89,7 +89,7 @@ class MissionController:
         # Previous error values used to calculate the derivative (rate of change)
         self._prev_error_y = 0.0
         self._prev_error_x = 0.0
-        self._prev_error_area = 0.0
+        self._prev_error_dist_m = 0.0
         
         self._prev_time = time.time() # Time of the last frame (for calculating dt)
         self._last_print_time = 0.0   # Timer for console spam reduction
@@ -424,9 +424,14 @@ class MissionController:
                     if self.distance_estimator.is_recording:
                         self.distance_estimator.record_sample(current_area)
 
-                    # Calculate area error for forward/backward movement
-                    # Positive error = box is smaller than target = too far away = fly forward
-                    e_area = (self._target_area - current_area) / self._target_area
+                    # Calculate absolute physical distance error in meters
+                    # Positive error = we are further than target distance = fly forward
+                    if current_area > 0:
+                        current_dist_m = self.distance_estimator.distance_to(current_area)
+                        target_dist_m = self.config.calibration.desired_stopping_distance_m
+                        e_dist_m = current_dist_m - target_dist_m
+                    else:
+                        e_dist_m = 0.0
                     
                     # Derivative (Rate of Change) Calculation
                     # Calculates how fast the error is changing. This helps prevent overshooting the target.
@@ -436,11 +441,11 @@ class MissionController:
                     if 0 < dt < self.config.control.max_derivative_dt:
                         derivative_y = (e_y_compensated - self._prev_error_y) / dt
                         derivative_x = (e_x - self._prev_error_x) / dt
-                        derivative_area = (e_area - self._prev_error_area) / dt
+                        derivative_dist_m = (e_dist_m - self._prev_error_dist_m) / dt
                     else:
                         derivative_y = 0
                         derivative_x = 0
-                        derivative_area = 0
+                        derivative_dist_m = 0
 
                     # Apply the PD Controller Equations
                     # PD Formula: Output = (Proportional_Gain * Error) + (Derivative_Gain * Derivative_Error)
@@ -452,13 +457,13 @@ class MissionController:
                     v_z = self._k_p_vz * e_y_compensated + self._k_d_vz * derivative_y
                     
                     # X-Velocity (Forward/Backward): Keeps the target at the right distance
-                    v_x_request = self._k_p_vx * e_area + self._k_d_vx * derivative_area
+                    v_x_request = self._k_p_vx * e_dist_m + self._k_d_vx * derivative_dist_m
 
                     # Deadzones & Safety Limits
                     # Deadzones prevent the drone from twitching when it's "close enough"
                     if abs(omega_z) < self.config.control.yaw_deadzone: omega_z = 0
                     if abs(v_z) < self.config.control.vz_deadzone: v_z = 0
-                    if abs(e_area) < self.config.control.area_deadzone: v_x_request = 0.0
+                    if abs(e_dist_m) < self.config.control.dist_deadzone: v_x_request = 0.0
 
                     # Speed Limit: If the target is way off center (e_mag >= r_stop), 
                     # stop moving forward until we yaw/climb to center it first.
@@ -492,7 +497,7 @@ class MissionController:
                     # Store current errors to use as "previous" errors in the next frame
                     self._prev_error_y = e_y_compensated
                     self._prev_error_x = e_x
-                    self._prev_error_area = e_area
+                    self._prev_error_dist_m = e_dist_m
                     self._prev_time = current_time
 
                     # Draw UI Overlays (Bounding Box, ID, Aiming Line)

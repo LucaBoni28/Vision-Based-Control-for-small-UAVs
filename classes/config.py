@@ -101,7 +101,7 @@ class ControlConfig:
     r_stop: float
     yaw_deadzone: float
     vz_deadzone: float
-    area_deadzone: float
+    dist_deadzone: float
     max_derivative_dt: float
     hover_timeout: float
     max_vx: float

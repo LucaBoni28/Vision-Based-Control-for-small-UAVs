@@ -54,16 +54,16 @@ tracker:
 
 # PID controller gains and deadzones for drone movement
 control:
-  k_p_yaw: 0.5                       # Proportional gain for yaw (turning left/right)
-  k_d_yaw: 0.05                      # Derivative gain for yaw
-  k_p_vz: 0.8                        # Proportional gain for vertical velocity (up/down)
-  k_d_vz: 0.31                       # Derivative gain for vertical velocity
-  k_p_vx: 1                          # Proportional gain for forward velocity (approaching)
-  k_d_vx: 0.06                       # Derivative gain for forward velocity
-  r_stop: 0.05                       # Stop ratio or target area ratio for approach
-  yaw_deadzone: 0.03                 # Minimum error in yaw to act upon
-  vz_deadzone: 0.03                  # Minimum error in vertical position to act upon
-  area_deadzone: 0.05                # Minimum error in area (distance) to act upon
+  k_p_yaw: 0.84                       # Proportional gain for yaw (turning left/right)
+  k_d_yaw: 0.0                       # Derivative gain for yaw (disabled — P-only for clean commands)
+  k_p_vz: 2.60                        # Proportional gain for vertical velocity (up/down)
+  k_d_vz: 0.0                       # Derivative gain for vertical velocity
+  k_p_vx: 0.3                          # Proportional gain for forward velocity (approaching)
+  k_d_vx: 0.0                       # Derivative gain for forward velocity
+  r_stop: 0.8                       # Stop ratio or target area ratio for approach
+  yaw_deadzone: 0.05                 # Minimum error in yaw to act upon
+  vz_deadzone: 0.05                  # Minimum error in vertical position to act upon
+  dist_deadzone: 0.10                # Minimum error in area (distance) to act upon
   max_derivative_dt: 0.5             # Maximum delta time allowed for derivative calculation
   hover_timeout: 10.0                # Time (seconds) to wait in hover before fallback action (landing)
   max_vx: 1.5                        # Maximum forward velocity limit (m/s)
