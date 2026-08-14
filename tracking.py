@@ -64,16 +64,16 @@ current_pitch_rad = 0
 # Control parameters (must match config.yaml / mission_controller.py)
 K_p_yaw = 0.84                   # Proportional gain for yaw rate
 K_d_yaw = 0.0                    # Derivative gain for yaw rate
-K_p_vz = 0.8                     # Proportional gain for vertical velocity
-K_d_vz = 0.31                    # Derivative gain for vertical velocity
-K_p_vx = 1.0                     # Proportional gain for forward velocity
-K_d_vx = 0.06                    # Derivative gain for forward velocity
+K_p_vz = 2.6                     # Proportional gain for vertical velocity
+K_d_vz = 0.0                     # Derivative gain for vertical velocity
+K_p_vx = 0.65                     # Proportional gain for forward velocity
+K_d_vx = 0.0                     # Derivative gain for forward velocity
 R_stop = 0.8                     # Stop ratio for v_x limiting
 
 # Deadzones (must match config.yaml / mission_controller.py)
 YAW_DEADZONE = 0.03              # Minimum yaw rate output to act upon
 VZ_DEADZONE = 0.03               # Minimum vz output to act upon
-AREA_DEADZONE = 0.05             # Minimum area error to act upon
+DIST_DEADZONE = 0.10             # Minimum distance error to act upon
 MAX_DERIVATIVE_DT = 0.5          # Maximum delta time for derivative calculation
 
 # Velocity limits (must match config.yaml / mission_controller.py)
@@ -130,7 +130,7 @@ locked_id = None
 timeout_frames = 0   
 prev_error_y = 0   
 prev_error_x = 0   
-prev_error_area = 0
+prev_error_dist_m = 0
 prev_time = time.time()
 prev_time_fps = 0
 
@@ -138,9 +138,8 @@ prev_time_fps = 0
 # is_calibrating = False          # Trigger switch
 # calibration_areas = []          # Array to store the data
 # CALIBRATION_SAMPLES = 100       # Number of frames
-OPTICAL_CONSTANT = 75000*(1.5)**2    
-DESIRED_STOPPING_DISTANCE = 0.7   # [m]
-TARGET_AREA = OPTICAL_CONSTANT / (DESIRED_STOPPING_DISTANCE**2)             # Default value
+OPTICAL_CONSTANT = 108067.2    
+DESIRED_STOPPING_DISTANCE = 5.0   # [m]
 
 frame_number = 0
 
@@ -271,7 +270,13 @@ while cap.isOpened():
             h = y2 - y1
             current_area = w * h
 
-            e_area = (TARGET_AREA - current_area) / TARGET_AREA
+            # Calculate Distance estimation in meters
+            if current_area > 0:
+                distance_estimate = math.sqrt(OPTICAL_CONSTANT / current_area)
+            else:
+                distance_estimate = 0.0
+                
+            e_dist_m = distance_estimate - DESIRED_STOPPING_DISTANCE
 
             # Calculate the error magnitude
             e_mag = math.sqrt(e_x**2 + e_y_compensated**2)
@@ -285,11 +290,11 @@ while cap.isOpened():
             if 0 < dt < MAX_DERIVATIVE_DT:
                 derivative_y = (e_y_compensated - prev_error_y) / dt
                 derivative_x = (e_x - prev_error_x) / dt
-                derivative_area = (e_area - prev_error_area) / dt
+                derivative_dist_m = (e_dist_m - prev_error_dist_m) / dt
             else:
                 derivative_y = 0
                 derivative_x = 0
-                derivative_area = 0
+                derivative_dist_m = 0
 
             # Apply the PD Controller Equations
             # PD Formula: Output = (Proportional_Gain * Error) + (Derivative_Gain * Derivative_Error)
@@ -301,7 +306,7 @@ while cap.isOpened():
             v_z = K_p_vz * e_y_compensated + K_d_vz * derivative_y
 
             # X-Velocity (Forward/Backward): Keeps the target at the right distance
-            v_x_request = K_p_vx * e_area + K_d_vx * derivative_area
+            v_x_request = K_p_vx * e_dist_m + K_d_vx * derivative_dist_m
 
             # Deadzones & Safety Limits
             # Deadzones prevent the drone from twitching when it's "close enough"
@@ -309,7 +314,7 @@ while cap.isOpened():
                 omega_z = 0
             if abs(v_z) < VZ_DEADZONE:
                 v_z = 0
-            if abs(e_area) < AREA_DEADZONE:
+            if abs(e_dist_m) < DIST_DEADZONE:
                 v_x_request = 0.0
 
             # Speed Limit: If the target is way off center (e_mag >= r_stop),
@@ -333,11 +338,7 @@ while cap.isOpened():
             print(f"Pitch: {current_pitch_rad*180/3.14:.2f} deg | Vx: {v_x:.2f} m/s | Vz: {v_z:.2f} m/s | YawRate:{omega_z:.2f} rad/s")
 
 
-            # Calculate Distance estimation in meters
-            if current_area > 0:
-                distance_estimate = math.sqrt(OPTICAL_CONSTANT / current_area)
-            else:
-                distance_estimate = 0.0
+            # Distance already calculated above
 
             # Send the MAVLink command
             master.mav.set_position_target_local_ned_send(
@@ -362,7 +363,7 @@ while cap.isOpened():
             # Update the memory states
             prev_error_y = e_y_compensated
             prev_error_x = e_x
-            prev_error_area = e_area
+            prev_error_dist_m = e_dist_m
             prev_time = current_time
 
             # Visual GUI Debugging
