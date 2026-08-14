@@ -34,7 +34,7 @@ with jtop() as jetson:
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
             # Define the CSV headers
-            writer.writerow(['Time_Sec', 'GPU_Util_%', 'GPU_Freq_MHz', 'DLA_Util_%', 'CPU_Util_%', 'RAM_Usage_%', 'Power_TOT_mW'])
+            writer.writerow(['Time_Sec', 'GPU_Util_%', 'GPU_Freq_MHz', 'CPU_Util_%', 'RAM_Usage_%', 'Power_TOT_mW'])
             
             start_time = time.time()
             
@@ -50,7 +50,10 @@ with jtop() as jetson:
                         gpu_info = jetson.gpu
                         for gpu_name, gpu_data in gpu_info.items():
                             if isinstance(gpu_data, dict):
-                                gpu = gpu_data.get('load', gpu_data.get('val', 0))
+                                if 'status' in gpu_data and isinstance(gpu_data['status'], dict):
+                                    gpu = gpu_data['status'].get('load', 0.0)
+                                else:
+                                    gpu = gpu_data.get('load', gpu_data.get('val', 0))
                                 freq = gpu_data.get('freq', {})
                                 if isinstance(freq, dict):
                                     gpu_freq_mhz = freq.get('cur', 0) / 1000  # kHz -> MHz
@@ -60,22 +63,6 @@ with jtop() as jetson:
                     except (AttributeError, TypeError, KeyError):
                         gpu = jetson.stats.get('GPU', 0)
                     
-                    # DLA (Deep Learning Accelerator): captures TensorRT inference load
-                    dla_util = 0
-                    try:
-                        engine_info = jetson.engine
-                        if 'DLA' in engine_info:
-                            dla_data = engine_info['DLA']
-                            # jtop may report multiple DLA cores (DLA0, DLA1)
-                            if isinstance(dla_data, dict):
-                                loads = []
-                                for core_name, core_data in dla_data.items():
-                                    if isinstance(core_data, dict):
-                                        loads.append(core_data.get('load', core_data.get('val', 0)))
-                                dla_util = sum(loads) / len(loads) if loads else 0
-                    except (AttributeError, TypeError, KeyError):
-                        dla_util = 0
-                    
                     # Calculate average CPU usage across all cores
                     cpu_cores = [jetson.stats.get(f'CPU{i}', 0) for i in range(1, 9) if f'CPU{i}' in jetson.stats]
                     cpu_avg = sum(cpu_cores) / len(cpu_cores) if cpu_cores else 0
@@ -84,7 +71,7 @@ with jtop() as jetson:
                     power = jetson.stats.get('Power TOT', 0) # Total board power consumption
                     
                     # Log to CSV
-                    writer.writerow([f"{current_time:.1f}", gpu, f"{gpu_freq_mhz:.0f}", f"{dla_util:.1f}", f"{cpu_avg:.1f}", ram, power])
+                    writer.writerow([f"{current_time:.1f}", gpu, f"{gpu_freq_mhz:.0f}", f"{cpu_avg:.1f}", ram, power])
                     
                     # Force write to disk so data isn't lost if you abruptly kill the script
                     f.flush() 
