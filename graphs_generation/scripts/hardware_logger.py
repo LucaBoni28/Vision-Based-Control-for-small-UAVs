@@ -11,9 +11,17 @@ import time
 import sys
 import os
 
-# Pass the algorithm name from the terminal to name the file
-algorithm_name = sys.argv[1] if len(sys.argv) > 1 else "combined"
+import argparse
+
+parser = argparse.ArgumentParser(description="Hardware Logger")
+parser.add_argument('algorithm', nargs='?', default='combined', help='Algorithm name (e.g. bytetrack)')
+parser.add_argument('--run-name', default=None, help='Subfolder name for grouping logs (e.g. run_002)')
+args = parser.parse_args()
+
+algorithm_name = args.algorithm
 output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+if args.run_name:
+    output_dir = os.path.join(output_dir, args.run_name)
 os.makedirs(output_dir, exist_ok=True)
 filename = os.path.join(output_dir, f"{algorithm_name}_hardware_stats.csv")
 

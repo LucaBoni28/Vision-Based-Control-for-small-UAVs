@@ -16,8 +16,19 @@ plt.rcParams.update({
     'font.size': 12
 })
 
+import argparse
+
+parser = argparse.ArgumentParser(description="Telemetry Plotter")
+parser.add_argument('--run-name', default=None, help='Subfolder name for grouping logs (e.g. run_002)')
+args = parser.parse_args()
+
 log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
 plot_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'plots')
+
+if args.run_name:
+    log_dir = os.path.join(log_dir, args.run_name)
+    plot_dir = os.path.join(plot_dir, args.run_name)
+
 os.makedirs(plot_dir, exist_ok=True)
 
 # Define algorithms

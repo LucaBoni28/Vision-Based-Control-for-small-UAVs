@@ -48,13 +48,14 @@ class ThesisLogger:
         ],
     }
 
-    def __init__(self, test_mode, tracker_name=None):
+    def __init__(self, test_mode, tracker_name=None, run_name=None):
         """Initialize the logger.
 
         Args:
             test_mode: One of 'combined', 'step_response'.
             tracker_name: Optional tracker name for combined filenames
                           (e.g., 'bytetrack' → combined_bytetrack.csv).
+            run_name: Optional string to group logs into a subfolder (e.g., 'run_002').
         """
         if test_mode not in self.HEADERS:
             raise ValueError(
@@ -65,8 +66,10 @@ class ThesisLogger:
         self.test_mode = test_mode
         self.headers = self.HEADERS[test_mode]
 
-        # Build output path: graphs_generation/logs/<filename>.csv
+        # Build output path: graphs_generation/logs/[run_name]/<filename>.csv
         output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+        if run_name:
+            output_dir = os.path.join(output_dir, run_name)
         os.makedirs(output_dir, exist_ok=True)
 
         if tracker_name:

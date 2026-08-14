@@ -28,8 +28,10 @@ parser.add_argument('--test', choices=['combined'], default=None,
                     help='Enable CSV logging: combined (Ch.4 and Ch.6 merged)')
 parser.add_argument('--tracker', default='bytetrack',
                     help='Tracker name for benchmark CSV filename')
+parser.add_argument('--run-name', default=None,
+                    help='Subfolder name for grouping logs (e.g., run_002)')
 args, _ = parser.parse_known_args()
-logger = ThesisLogger(args.test, tracker_name=args.tracker) if args.test else None
+logger = ThesisLogger(args.test, tracker_name=args.tracker, run_name=args.run_name) if args.test else None
 
 
 
