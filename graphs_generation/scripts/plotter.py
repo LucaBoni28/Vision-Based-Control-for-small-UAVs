@@ -20,6 +20,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description="Telemetry Plotter")
 parser.add_argument('--run-name', default=None, help='Subfolder name for grouping logs (e.g. run_002)')
+parser.add_argument('--target-dist', type=float, default=0.7, help='Target hover distance in meters for the plot')
 args = parser.parse_args()
 
 log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
@@ -39,7 +40,7 @@ pretty_names = {'bytetrack': 'ByteTrack', 'botsort': 'BoT-SORT', 'deepsort': 'De
 # =============================================================================
 # 1. HARDWARE STATISTICS PLOTTING (GPU, DLA, CPU, RAM)
 # =============================================================================
-fig_hw, axs_hw = plt.subplots(4, 1, figsize=(10, 12), sharex=True)
+fig_hw, axs_hw = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
 
 hw_found = False
 for algo_name, color in zip(algorithms, colors):
@@ -48,11 +49,14 @@ for algo_name, color in zip(algorithms, colors):
         df_hw = pd.read_csv(filename) 
         p_name = pretty_names[algo_name]
         if 'GPU_Util_%' in df_hw.columns:
-            axs_hw[0].plot(df_hw['Time_Sec'], df_hw['GPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=p_name)
-        if 'DLA_Util_%' in df_hw.columns:
-            axs_hw[1].plot(df_hw['Time_Sec'], df_hw['DLA_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=p_name)
-        axs_hw[2].plot(df_hw['Time_Sec'], df_hw['CPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=p_name)
-        axs_hw[3].plot(df_hw['Time_Sec'], df_hw['RAM_Usage_%'], color=color, linewidth=1.5, alpha=0.8, label=p_name)
+            avg_gpu = df_hw['GPU_Util_%'].mean()
+            axs_hw[0].plot(df_hw['Time_Sec'], df_hw['GPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_gpu:.1f}%)")
+        
+        avg_cpu = df_hw['CPU_Util_%'].mean()
+        axs_hw[1].plot(df_hw['Time_Sec'], df_hw['CPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_cpu:.1f}%)")
+        
+        avg_ram = df_hw['RAM_Usage_%'].mean()
+        axs_hw[2].plot(df_hw['Time_Sec'], df_hw['RAM_Usage_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_ram:.2f})")
         hw_found = True
     except FileNotFoundError:
         print(f"Notice: {filename} not found.")
@@ -63,18 +67,14 @@ if hw_found:
     axs_hw[0].grid(True, linestyle=':', alpha=0.7)
     axs_hw[0].legend(loc='upper right', fontsize=10)
 
-    axs_hw[1].set_ylabel('DLA Util [%]')
+    axs_hw[1].set_ylabel('CPU Util [%]')
     axs_hw[1].grid(True, linestyle=':', alpha=0.7)
     axs_hw[1].legend(loc='upper right', fontsize=10)
 
-    axs_hw[2].set_ylabel('CPU Util [%]')
+    axs_hw[2].set_xlabel('Time [s]')
+    axs_hw[2].set_ylabel('RAM Usage [%]')
     axs_hw[2].grid(True, linestyle=':', alpha=0.7)
     axs_hw[2].legend(loc='upper right', fontsize=10)
-
-    axs_hw[3].set_xlabel('Time [s]')
-    axs_hw[3].set_ylabel('RAM Usage [%]')
-    axs_hw[3].grid(True, linestyle=':', alpha=0.7)
-    axs_hw[3].legend(loc='upper right', fontsize=10)
 
     plt.figure(fig_hw.number)
     plt.tight_layout()
@@ -298,7 +298,7 @@ for algo_name in algorithms:
 
         # 3. Distance Estimation
         axs_dist[2].plot(df_dist['Time_Sec'], df_dist['Distance_Est'], color='red', linewidth=1.5, label='Estimated Distance')
-        axs_dist[2].axhline(0.70, color='green', linestyle='--', linewidth=2, label='Target Hover Threshold')
+        axs_dist[2].axhline(args.target_dist, color='green', linestyle='--', linewidth=2, label=f'Target Hover Threshold ({args.target_dist}m)')
         axs_dist[2].set_ylabel('Distance [m]')
         axs_dist[2].grid(True, linestyle=':', alpha=0.7)
         axs_dist[2].legend(loc='upper right')
