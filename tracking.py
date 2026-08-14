@@ -139,7 +139,7 @@ prev_time_fps = 0
 # calibration_areas = []          # Array to store the data
 # CALIBRATION_SAMPLES = 100       # Number of frames
 OPTICAL_CONSTANT = 108067.2    
-DESIRED_STOPPING_DISTANCE = 5.0   # [m]
+DESIRED_STOPPING_DISTANCE = 1   # [m]
 
 frame_number = 0
 

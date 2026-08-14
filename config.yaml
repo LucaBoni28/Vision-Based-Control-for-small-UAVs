@@ -26,13 +26,14 @@ vision:
 
 control:
   # Proportional gains
-  k_p_yaw: 1.0
-  k_p_vz: 1.0
-  k_p_vx: 1.0
+  k_p_yaw: 0.84
+  k_p_vz: 2.6
+  k_p_vx: 2.2
 
   # Derivative gains
-  k_d_yaw: 0.05
-  k_d_vz: 0.05
+  k_d_yaw: 0.0
+  k_d_vz: 0.0
+  k_d_vx: 0.0
   
   # limit center alignment
   r_stop: 0.8
