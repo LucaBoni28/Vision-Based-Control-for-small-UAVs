@@ -24,8 +24,8 @@ script_start_time = time.time()
 
 # Parse test mode from command line (optional — no flags = normal operation)
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument('--test', choices=['combined'], default=None,
-                    help='Enable CSV logging: combined (Ch.4 and Ch.6 merged)')
+parser.add_argument('--test', choices=['sys_perfo'], default=None,
+                    help='Enable CSV logging: sys_perfo (Ch.4 and Ch.6 merged)')
 parser.add_argument('--tracker', default='bytetrack',
                     help='Tracker name for benchmark CSV filename')
 parser.add_argument('--run-name', default=None,
@@ -373,7 +373,7 @@ while cap.isOpened():
             cv2.arrowedLine(frame, (CENTER_X, CENTER_Y), (bb_center_x, bb_center_y), (0, 0, 255), 5, tipLength=0.05)
 
     # Combined test logging — one row per frame
-    if logger and args.test == "combined":
+    if logger and args.test == "sys_perfo":
         logger.log(
             Frame_Number=frame_number,
             Time_Sec=round(t_frame_capture - script_start_time, 3),

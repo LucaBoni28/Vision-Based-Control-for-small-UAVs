@@ -14,7 +14,7 @@ import os
 import argparse
 
 parser = argparse.ArgumentParser(description="Hardware Logger")
-parser.add_argument('algorithm', nargs='?', default='combined', help='Algorithm name (e.g. bytetrack)')
+parser.add_argument('algorithm', nargs='?', default='sys_perfo', help='Algorithm name (e.g. bytetrack)')
 parser.add_argument('--run-name', default=None, help='Subfolder name for grouping logs (e.g. run_002)')
 args = parser.parse_args()
 

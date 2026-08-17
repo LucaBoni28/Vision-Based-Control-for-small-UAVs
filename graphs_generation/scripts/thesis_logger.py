@@ -15,22 +15,11 @@ class ThesisLogger:
     """CSV logger that creates the correct file and headers based on test mode.
 
     Supported test modes:
-        - "combined"       : Tracker comparison, Distance estimation & velocity (Chapter 4 & 6)
-        - "step_response"  : Yaw PD step-response (Chapter 5)
+        - "sys_perfo"          : Tracker comparison, Distance estimation & velocity (Chapter 4 & 6)
     """
 
     HEADERS = {
-        "step_response": [
-            "Time_Sec",
-            "e_x",
-            "e_y",
-            "e_area",
-            "e_mag",
-            "v_x",
-            "v_z",
-            "omega_z",
-        ],
-        "combined": [
+        "sys_perfo": [
             "Frame_Number",
             "Time_Sec",
             "Processing_Time_ms",
@@ -52,9 +41,9 @@ class ThesisLogger:
         """Initialize the logger.
 
         Args:
-            test_mode: One of 'combined', 'step_response'.
-            tracker_name: Optional tracker name for combined filenames
-                          (e.g., 'bytetrack' → combined_bytetrack.csv).
+            test_mode: One of 'sys_perfo'.
+            tracker_name: Optional tracker name for sys_perfo filenames
+                          (e.g., 'bytetrack' → sys_perfo_bytetrack.csv).
             run_name: Optional string to group logs into a subfolder (e.g., 'run_002').
         """
         if test_mode not in self.HEADERS:
