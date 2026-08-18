@@ -19,10 +19,10 @@ python scripts/hardware_logger.py bytetrack --run-name run_001
 *(Repeat for `deepsort` and `botsort` by replacing the algorithm name).*
 
 ### 2. Full Pipeline Tracking & Latency Benchmarks (Chapter 6)
-To evaluate the end-to-end latency, FPS, and tracking consistency (ID switches, jitter, distances), use the main `tracking.py` script located in the root of the repository. It imports `thesis_logger.py` automatically when you pass the `--test combined` flag.
+To evaluate the end-to-end latency, FPS, and tracking consistency (ID switches, jitter, distances), use the main `tracking.py` script located in the root of the repository. It imports `thesis_logger.py` automatically when you pass the `--test sys_perfo` flag.
 ```bash
 # Run this from the root repository directory, NOT inside graphs_generation/
-python tracking.py --test combined --tracker bytetrack --run-name run_001
+python tracking.py --test sys_perfo --tracker bytetrack --run-name run_001
 ```
 *(Repeat for other trackers to collect comparative data).*
 
