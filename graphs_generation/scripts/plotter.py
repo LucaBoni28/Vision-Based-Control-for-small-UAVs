@@ -38,9 +38,10 @@ colors = ['darkred', 'darkblue', 'darkgreen']
 pretty_names = {'bytetrack': 'ByteTrack', 'botsort': 'BoT-SORT', 'deepsort': 'DeepSORT'}
 
 # =============================================================================
-# 1. HARDWARE STATISTICS PLOTTING (GPU, DLA, CPU, RAM)
+# 1. HARDWARE STATISTICS PLOTTING (GPU, CPU | RAM, Power)
 # =============================================================================
-fig_hw, axs_hw = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+fig_hw1, axs_hw1 = plt.subplots(2, 1, figsize=(10, 8), sharex=True)  # For GPU & CPU
+fig_hw2, axs_hw2 = plt.subplots(2, 1, figsize=(10, 8), sharex=True)  # For RAM & Power
 
 hw_found = False
 for algo_name, color in zip(algorithms, colors):
@@ -48,46 +49,69 @@ for algo_name, color in zip(algorithms, colors):
     try:
         df_hw = pd.read_csv(filename) 
         p_name = pretty_names[algo_name]
+        
         if 'GPU_Util_%' in df_hw.columns:
             avg_gpu = df_hw['GPU_Util_%'].mean()
-            axs_hw[0].plot(df_hw['Time_Sec'], df_hw['GPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_gpu:.1f}%)")
+            axs_hw1[0].plot(df_hw['Time_Sec'], df_hw['GPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_gpu:.1f}%)")
         
-        avg_cpu = df_hw['CPU_Util_%'].mean()
-        axs_hw[1].plot(df_hw['Time_Sec'], df_hw['CPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_cpu:.1f}%)")
+        if 'CPU_Util_%' in df_hw.columns:
+            avg_cpu = df_hw['CPU_Util_%'].mean()
+            axs_hw1[1].plot(df_hw['Time_Sec'], df_hw['CPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_cpu:.1f}%)")
         
-        avg_ram = df_hw['RAM_Usage_%'].mean()
-        axs_hw[2].plot(df_hw['Time_Sec'], df_hw['RAM_Usage_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_ram:.2f})")
+        if 'RAM_Usage_%' in df_hw.columns:
+            avg_ram = df_hw['RAM_Usage_%'].mean()
+            axs_hw2[0].plot(df_hw['Time_Sec'], df_hw['RAM_Usage_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_ram:.2f}%)")
+            
+        if 'Power_TOT_mW' in df_hw.columns:
+            avg_pwr = df_hw['Power_TOT_mW'].mean()
+            axs_hw2[1].plot(df_hw['Time_Sec'], df_hw['Power_TOT_mW'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_pwr:.0f} mW)")
+            
         hw_found = True
     except FileNotFoundError:
         print(f"Notice: {filename} not found.")
 
 if hw_found:
-    axs_hw[0].set_ylabel('GPU Util [%]')
-    axs_hw[0].set_title('Hardware Utilization Comparison Across Tracking Algorithms')
-    axs_hw[0].grid(True, linestyle=':', alpha=0.7)
-    axs_hw[0].legend(loc='upper right', fontsize=10)
+    # --- GPU & CPU Plot ---
+    axs_hw1[0].set_ylabel('GPU Util [%]')
+    axs_hw1[0].set_title('Compute Utilization Across Tracking Algorithms')
+    axs_hw1[0].grid(True, linestyle=':', alpha=0.7)
+    axs_hw1[0].legend(loc='upper right', fontsize=10)
 
-    axs_hw[1].set_ylabel('CPU Util [%]')
-    axs_hw[1].grid(True, linestyle=':', alpha=0.7)
-    axs_hw[1].legend(loc='upper right', fontsize=10)
+    axs_hw1[1].set_xlabel('Time [s]')
+    axs_hw1[1].set_ylabel('CPU Util [%]')
+    axs_hw1[1].grid(True, linestyle=':', alpha=0.7)
+    axs_hw1[1].legend(loc='upper right', fontsize=10)
 
-    axs_hw[2].set_xlabel('Time [s]')
-    axs_hw[2].set_ylabel('RAM Usage [%]')
-    axs_hw[2].grid(True, linestyle=':', alpha=0.7)
-    axs_hw[2].legend(loc='upper right', fontsize=10)
-
-    plt.figure(fig_hw.number)
+    plt.figure(fig_hw1.number)
     plt.tight_layout()
-    out_path = os.path.join(plot_dir, 'hardware_comparison_stats.png')
-    plt.savefig(out_path, format='png', dpi=300)
-    print(f"Hardware stats plot saved: {out_path}")
+    out_path1 = os.path.join(plot_dir, 'hardware_compute_stats.png')
+    plt.savefig(out_path1, format='png', dpi=300)
+    print(f"Hardware compute stats (GPU & CPU) plot saved: {out_path1}")
+
+    # --- RAM & Power Plot ---
+    axs_hw2[0].set_ylabel('RAM Usage [%]')
+    axs_hw2[0].set_title('Memory and Power Consumption Across Tracking Algorithms')
+    axs_hw2[0].grid(True, linestyle=':', alpha=0.7)
+    axs_hw2[0].legend(loc='upper right', fontsize=10)
+
+    axs_hw2[1].set_xlabel('Time [s]')
+    axs_hw2[1].set_ylabel('Total Power [mW]')
+    axs_hw2[1].grid(True, linestyle=':', alpha=0.7)
+    axs_hw2[1].legend(loc='upper right', fontsize=10)
+
+    plt.figure(fig_hw2.number)
+    plt.tight_layout()
+    out_path2 = os.path.join(plot_dir, 'hardware_memory_power_stats.png')
+    plt.savefig(out_path2, format='png', dpi=300)
+    print(f"Hardware memory & power stats (RAM & Power) plot saved: {out_path2}")
 
 # =============================================================================
 # 2. COMBINED TRACKING BENCHMARK ANALYSIS
 #    - 2a: Average bar charts (split into 2 side-by-side images)
 #    - 2b: Time-series line plots (2 additional side-by-side images)
 # =============================================================================
-avg_fps = {}
+avg_fps_sys = {}
+avg_fps_algo = {}
 id_switches = {}
 avg_latency = {}
 avg_jitter = {}
@@ -102,12 +126,21 @@ for algo_name in algorithms:
         trackers_found.append(p_name)
         benchmark_dfs[algo_name] = df_bench
 
-        # Average FPS from processing time
-        avg_proc_ms = df_bench['Processing_Time_ms'].mean()
-        avg_fps[p_name] = 1000.0 / avg_proc_ms if avg_proc_ms > 0 else 0
+        # Discard the first 15 frames as "warm-up" (model initialization) for fair averages
+        df_steady = df_bench.iloc[15:] if len(df_bench) > 30 else df_bench
+
+        # Median System FPS
+        if 'FPS' in df_steady.columns:
+            avg_fps_sys[p_name] = df_steady['FPS'].median()
+        else:
+            avg_fps_sys[p_name] = 0
+
+        # Median Algorithm FPS
+        avg_proc_ms = df_steady['Processing_Time_ms'].median()
+        avg_fps_algo[p_name] = 1000.0 / avg_proc_ms if avg_proc_ms > 0 else 0
         
-        # Average Latency
-        avg_lat = df_bench['Pipeline_Latency_ms'].mean()
+        # Median Latency
+        avg_lat = df_steady['Pipeline_Latency_ms'].median()
         avg_latency[p_name] = avg_lat
 
         # Count ID switches: number of times Object_ID changes (excluding -1 gaps)
@@ -133,25 +166,42 @@ colors_bench = ['#2ecc71', '#3498db', '#e74c3c']
 if trackers_found:
     x_pos = range(len(trackers_found))
 
-    # Image 1: FPS | Latency (side-by-side)
-    fig_avg1, (ax_fps, ax_lat) = plt.subplots(1, 2, figsize=(12, 5))
+    # Image 1: System FPS | Algorithm FPS | Latency (side-by-side)
+    fig_avg1, (ax_fps_sys, ax_fps_algo, ax_lat) = plt.subplots(1, 3, figsize=(18, 5))
 
-    bars_fps = ax_fps.bar(x_pos, [avg_fps[t] for t in trackers_found],
+    bars_fps_sys = ax_fps_sys.bar(x_pos, [avg_fps_sys[t] for t in trackers_found],
                           color=colors_bench[:len(trackers_found)], width=0.5)
-    ax_fps.set_xticks(list(x_pos))
-    ax_fps.set_xticklabels(trackers_found)
-    ax_fps.set_ylabel('Average FPS')
-    ax_fps.set_title('Algorithm FPS Comparison')
-    ax_fps.grid(True, axis='y', linestyle=':', alpha=0.7)
-    for bar, val in zip(bars_fps, [avg_fps[t] for t in trackers_found]):
-        ax_fps.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5,
+    max_fps_sys = max([avg_fps_sys[t] for t in trackers_found] + [1])
+    ax_fps_sys.set_ylim(0, max_fps_sys * 1.15)
+    ax_fps_sys.set_xticks(list(x_pos))
+    ax_fps_sys.set_xticklabels(trackers_found)
+    ax_fps_sys.set_ylabel('Median System FPS')
+    ax_fps_sys.set_title('Overall System FPS Comparison')
+    ax_fps_sys.grid(True, axis='y', linestyle=':', alpha=0.7)
+    for bar, val in zip(bars_fps_sys, [avg_fps_sys[t] for t in trackers_found]):
+        ax_fps_sys.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5,
+                    f'{val:.1f}', ha='center', va='bottom', fontweight='bold')
+
+    bars_fps_algo = ax_fps_algo.bar(x_pos, [avg_fps_algo[t] for t in trackers_found],
+                          color=colors_bench[:len(trackers_found)], width=0.5)
+    max_fps_algo = max([avg_fps_algo[t] for t in trackers_found] + [1])
+    ax_fps_algo.set_ylim(0, max_fps_algo * 1.15)
+    ax_fps_algo.set_xticks(list(x_pos))
+    ax_fps_algo.set_xticklabels(trackers_found)
+    ax_fps_algo.set_ylabel('Median Algorithm FPS')
+    ax_fps_algo.set_title('Pure Algorithm FPS Comparison')
+    ax_fps_algo.grid(True, axis='y', linestyle=':', alpha=0.7)
+    for bar, val in zip(bars_fps_algo, [avg_fps_algo[t] for t in trackers_found]):
+        ax_fps_algo.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5,
                     f'{val:.1f}', ha='center', va='bottom', fontweight='bold')
 
     bars_lat = ax_lat.bar(x_pos, [avg_latency[t] for t in trackers_found],
                           color=colors_bench[:len(trackers_found)], width=0.5)
+    max_lat = max([avg_latency[t] for t in trackers_found] + [1])
+    ax_lat.set_ylim(0, max_lat * 1.15)
     ax_lat.set_xticks(list(x_pos))
     ax_lat.set_xticklabels(trackers_found)
-    ax_lat.set_ylabel('Pipeline Latency [ms]')
+    ax_lat.set_ylabel('Median Pipeline Latency [ms]')
     ax_lat.set_title('Pipeline Latency Comparison')
     ax_lat.grid(True, axis='y', linestyle=':', alpha=0.7)
     for bar, val in zip(bars_lat, [avg_latency[t] for t in trackers_found]):
@@ -169,6 +219,8 @@ if trackers_found:
 
     bars_ids = ax_ids.bar(x_pos, [id_switches[t] for t in trackers_found],
                           color=colors_bench[:len(trackers_found)], width=0.5)
+    max_ids = max([id_switches[t] for t in trackers_found] + [1])
+    ax_ids.set_ylim(0, max_ids * 1.15)
     ax_ids.set_xticks(list(x_pos))
     ax_ids.set_xticklabels(trackers_found)
     ax_ids.set_ylabel('ID Switches')
@@ -180,6 +232,8 @@ if trackers_found:
 
     bars_jit = ax_jit.bar(x_pos, [avg_jitter[t] for t in trackers_found],
                           color=colors_bench[:len(trackers_found)], width=0.5)
+    max_jit = max([avg_jitter[t] for t in trackers_found] + [1])
+    ax_jit.set_ylim(0, max_jit * 1.15)
     ax_jit.set_xticks(list(x_pos))
     ax_jit.set_xticklabels(trackers_found)
     ax_jit.set_ylabel('Average Jitter [pixels]')
@@ -197,8 +251,10 @@ if trackers_found:
 
 # --- 2b: Time-Series Line Plots (side-by-side) ---
 if benchmark_dfs:
-    # Image 3: FPS vs Time | Latency vs Time (side-by-side)
-    fig_ts1, (ax_fps_ts, ax_lat_ts) = plt.subplots(1, 2, figsize=(14, 5))
+    # Image 3: System FPS | Algorithm FPS | Latency vs Time (side-by-side)
+    fig_ts1, (ax_fps_sys_ts, ax_fps_algo_ts, ax_lat_ts) = plt.subplots(1, 3, figsize=(18, 5))
+
+    all_lat_vals = []
 
     for algo_name, color in zip(algorithms, colors):
         if algo_name not in benchmark_dfs:
@@ -206,22 +262,37 @@ if benchmark_dfs:
         df = benchmark_dfs[algo_name]
         p_name = pretty_names[algo_name]
 
-        # Instantaneous FPS = 1000 / Processing_Time_ms
-        inst_fps = 1000.0 / df['Processing_Time_ms'].replace(0, np.nan)
-        ax_fps_ts.plot(df['Time_Sec'], inst_fps, color=color, linewidth=1, alpha=0.7, label=p_name)
+        # System FPS
+        if 'FPS' in df.columns:
+            ax_fps_sys_ts.plot(df['Time_Sec'], df['FPS'], color=color, linewidth=1, alpha=0.7, label=p_name)
+            
+        # Algorithm FPS
+        inst_fps_algo = 1000.0 / df['Processing_Time_ms'].replace(0, np.nan)
+        ax_fps_algo_ts.plot(df['Time_Sec'], inst_fps_algo, color=color, linewidth=1, alpha=0.7, label=p_name)
+            
         ax_lat_ts.plot(df['Time_Sec'], df['Pipeline_Latency_ms'], color=color, linewidth=1, alpha=0.7, label=p_name)
+        all_lat_vals.extend(df['Pipeline_Latency_ms'].dropna().tolist())
 
-    ax_fps_ts.set_xlabel('Time [s]')
-    ax_fps_ts.set_ylabel('FPS')
-    ax_fps_ts.set_title('Instantaneous FPS Over Time')
-    ax_fps_ts.grid(True, linestyle=':', alpha=0.7)
-    ax_fps_ts.legend(loc='upper right', fontsize=10)
+    ax_fps_sys_ts.set_xlabel('Time [s]')
+    ax_fps_sys_ts.set_ylabel('System FPS')
+    ax_fps_sys_ts.set_title('Instantaneous System FPS Over Time')
+    ax_fps_sys_ts.grid(True, linestyle=':', alpha=0.7)
+    ax_fps_sys_ts.legend(loc='upper right', fontsize=10)
+
+    ax_fps_algo_ts.set_xlabel('Time [s]')
+    ax_fps_algo_ts.set_ylabel('Algorithm FPS')
+    ax_fps_algo_ts.set_title('Instantaneous Algorithm FPS Over Time')
+    ax_fps_algo_ts.grid(True, linestyle=':', alpha=0.7)
+    ax_fps_algo_ts.legend(loc='upper right', fontsize=10)
 
     ax_lat_ts.set_xlabel('Time [s]')
     ax_lat_ts.set_ylabel('Pipeline Latency [ms]')
     ax_lat_ts.set_title('Pipeline Latency Over Time')
     ax_lat_ts.grid(True, linestyle=':', alpha=0.7)
     ax_lat_ts.legend(loc='upper right', fontsize=10)
+    if all_lat_vals:
+        p99_lat = np.percentile(all_lat_vals, 99)
+        ax_lat_ts.set_ylim(0, max(10, p99_lat * 1.5))
 
     plt.figure(fig_ts1.number)
     plt.tight_layout()
@@ -231,6 +302,8 @@ if benchmark_dfs:
 
     # Image 4: Cumulative ID Switches vs Time | Jitter vs Time (side-by-side)
     fig_ts2, (ax_ids_ts, ax_jit_ts) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    all_jitter_vals = []
 
     for algo_name, color in zip(algorithms, colors):
         if algo_name not in benchmark_dfs:
@@ -248,6 +321,7 @@ if benchmark_dfs:
         jitter = df['Bbox_X'].diff().abs() + df['Bbox_Y'].diff().abs()
         jitter = jitter.where(valid_mask, other=np.nan)
         ax_jit_ts.plot(df['Time_Sec'], jitter, color=color, linewidth=1, alpha=0.6, label=p_name)
+        all_jitter_vals.extend(jitter.dropna().tolist())
 
     ax_ids_ts.set_xlabel('Time [s]')
     ax_ids_ts.set_ylabel('Cumulative ID Switches')
@@ -260,12 +334,53 @@ if benchmark_dfs:
     ax_jit_ts.set_title('Bounding Box Jitter Over Time')
     ax_jit_ts.grid(True, linestyle=':', alpha=0.7)
     ax_jit_ts.legend(loc='upper right', fontsize=10)
+    if all_jitter_vals:
+        p98 = np.percentile(all_jitter_vals, 98)
+        ax_jit_ts.set_ylim(0, max(10, p98 * 1.5))
 
     plt.figure(fig_ts2.number)
     plt.tight_layout()
     out_path = os.path.join(plot_dir, 'benchmark_timeseries_id_switches_jitter.png')
     plt.savefig(out_path, format='png', dpi=300)
     print(f"Benchmark time-series (ID Switches & Jitter) saved: {out_path}")
+
+    # Image 5: Bounding Box Trajectories vs Time (side-by-side)
+    fig_ts3, (ax_box_x, ax_box_y) = plt.subplots(1, 2, figsize=(14, 5))
+
+    for algo_name, color in zip(algorithms, colors):
+        if algo_name not in benchmark_dfs:
+            continue
+        df = benchmark_dfs[algo_name]
+        p_name = pretty_names[algo_name]
+
+        # Valid boxes only
+        valid_mask = df['Object_ID'] != -1
+        df_valid = df[valid_mask]
+
+        ax_box_x.plot(df_valid['Time_Sec'], df_valid['Bbox_X'], color=color, linewidth=1, alpha=0.6, label=p_name)
+        ax_box_y.plot(df_valid['Time_Sec'], df_valid['Bbox_Y'], color=color, linewidth=1, alpha=0.6, label=p_name)
+
+    ax_box_x.set_xlabel('Time [s]')
+    ax_box_x.set_ylabel('Bbox X [pixels]')
+    ax_box_x.set_title('Target X Trajectory')
+    ax_box_x.grid(True, linestyle=':', alpha=0.7)
+    ax_box_x.legend(loc='upper right', fontsize=10)
+
+    ax_box_y.set_xlabel('Time [s]')
+    ax_box_y.set_ylabel('Bbox Y [pixels]')
+    ax_box_y.set_title('Target Y Trajectory')
+    ax_box_y.grid(True, linestyle=':', alpha=0.7)
+    ax_box_y.legend(loc='upper right', fontsize=10)
+    if 'df_valid' in locals() and not df_valid.empty:
+        ax_box_y.invert_yaxis() # Typical for images where Y goes down
+
+    plt.figure(fig_ts3.number)
+    plt.tight_layout()
+    out_path = os.path.join(plot_dir, 'benchmark_timeseries_bbox_trajectory.png')
+    plt.savefig(out_path, format='png', dpi=300)
+    print(f"Benchmark time-series (Bbox Trajectories) saved: {out_path}")
+
+
 
 # =============================================================================
 # 3. TELEMETRY PLOTS (Velocities, Distances, Areas per algorithm)
