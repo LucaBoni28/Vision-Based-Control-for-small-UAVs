@@ -78,6 +78,26 @@ class MissionController:
         # Reset the memory variables used for tracking and PD math
         self._reset_tracking_memory()
 
+        # Check Pixhawk hardware stabilization settings
+        # This automatically sets the software mode based on physical hardware configuration
+        print("[INFO] Checking Gimbal Stabilization parameter on Pixhawk...")
+        stab_tilt = self.flight.get_param("MNT1_STAB_TILT")
+        if stab_tilt is not None:
+            if stab_tilt == 1.0:
+                # Hardware stabilization is on. Let's check if an RC potentiometer is mapped.
+                rc_in = self.flight.get_param("MNT1_RC_IN_TILT")
+                if rc_in and rc_in > 0:
+                    print(f"[INFO] Hardware Gimbal is ENABLED and mapped to RC Channel {int(rc_in)}. Mode set to 'gimbal_manual'.")
+                    self.config.pitch_compensation.mode = "gimbal_manual"
+                else:
+                    print("[INFO] Hardware Gimbal is ENABLED but no RC input mapped. Mode set to 'gimbal_auto'.")
+                    self.config.pitch_compensation.mode = "gimbal_auto"
+            else:
+                print("[INFO] Hardware Gimbal Stabilization is DISABLED in Pixhawk. Mode set to 'software'.")
+                self.config.pitch_compensation.mode = "software"
+        else:
+            print(f"[WARNING] Could not fetch MNT1_STAB_TILT from Pixhawk. Falling back to config.yaml mode: {self.config.pitch_compensation.mode}")
+
     def _reset_tracking_memory(self) -> None:
         """
         Clears the current locked target and resets the history needed for derivative calculations.
@@ -405,9 +425,9 @@ class MissionController:
                     pitch_comp_mode = self.config.pitch_compensation.mode
                     if pitch_comp_mode == "software":
                         e_y_compensated = e_y - math.tan(current_pitch_rad)
-                    elif pitch_comp_mode == "gimbal_auto":
+                    elif pitch_comp_mode in ("gimbal_auto", "gimbal_manual"):
+                        # Pixhawk hardware is keeping the camera steady.
                         e_y_compensated = e_y
-                        self.flight.send_gimbal_pitch(-math.degrees(current_pitch_rad))
                     else:
                         e_y_compensated = e_y
 

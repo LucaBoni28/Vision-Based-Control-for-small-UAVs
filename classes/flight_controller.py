@@ -115,6 +115,27 @@ class FlightController:
             except Exception:
                 pass
 
+    # Fetches a parameter from the flight controller via MAVLink
+    def get_param(self, param_id: str, timeout: float = 3.0) -> Optional[float]:
+        if not self.master:
+            return None
+        
+        print(f"Fetching parameter {param_id} from Pixhawk...")
+        self.master.mav.param_request_read_send(
+            self.master.target_system,
+            self.master.target_component,
+            param_id.encode('utf-8'),
+            -1
+        )
+        
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            msg = self.master.recv_match(type='PARAM_VALUE', blocking=True, timeout=0.1)
+            if msg:
+                if msg.param_id.strip(chr(0)) == param_id:
+                    return msg.param_value
+        return None
+
     # Drains the MAVLink socket buffers for both the physical drone and SITL simulation
     def update(self) -> None:
         if self.master:
