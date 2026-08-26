@@ -130,7 +130,7 @@ def compute_step_metrics(time_s, signal, step_time, settling_pct=0.02, target_va
     }
 
 
-def plot_test_2(csv_path, output_dir=None):
+def plot_test_2(csv_path, output_dir=None, desired_distance=None):
     """Generate Test 2 plots and compute metrics."""
     print(f"Reading: {csv_path}")
     df = pd.read_csv(csv_path)
@@ -197,7 +197,8 @@ def plot_test_2(csv_path, output_dir=None):
 
     # Compute metrics for the primary error signal
     config = load_config()
-    target_val = config.calibration.desired_stopping_distance_m if axis == "dist" else 0.0
+    target_val_dist = desired_distance if desired_distance is not None else config.calibration.desired_stopping_distance_m
+    target_val = target_val_dist if axis == "dist" else 0.0
     metrics = compute_step_metrics(time_s, signal, step_time, target_value=target_val)
 
     # Annotate settling time band if available
@@ -222,9 +223,9 @@ def plot_test_2(csv_path, output_dir=None):
     elif axis == "dist":
         # Plot Measured Distance to Target vs Desired Distance
         measured_dist = df["distance_to_target"]
-        desired_dist = np.full_like(time_s, config.calibration.desired_stopping_distance_m) 
+        desired_dist = np.full_like(time_s, target_val_dist) 
         ax.plot(time_s, measured_dist, color="tab:orange", linewidth=1.5, label="Measured Distance to Target", alpha=0.9)
-        ax.plot(time_s, desired_dist, 'r--', linewidth=2, label=f"Desired Distance ({config.calibration.desired_stopping_distance_m}m)", alpha=0.8)
+        ax.plot(time_s, desired_dist, 'r--', linewidth=2, label=f"Desired Distance ({target_val_dist}m)", alpha=0.8)
         ax.set_ylabel("Distance (m)", fontsize=11)
     elif axis == "alt":
         # Plot Target Altitude vs Drone Altitude (NED down is negative, so invert for altitude)
@@ -293,6 +294,8 @@ def main():
     parser.add_argument("--axis", type=str, default=None,
                         choices=["yaw", "alt", "dist"],
                         help="Axis to look for if --csv is not specified")
+    parser.add_argument("--desired-distance", type=float, default=None,
+                        help="Override desired stopping distance for the plot (instead of using config)")
     args = parser.parse_args()
 
     if args.csv:
@@ -305,7 +308,7 @@ def main():
         print("  Or specify: --csv path/to/file.csv")
         sys.exit(1)
 
-    plot_test_2(csv_path)
+    plot_test_2(csv_path, desired_distance=args.desired_distance)
 
 
 if __name__ == "__main__":
