@@ -62,6 +62,63 @@ def add_phase_shading(ax, time_s, phase, label_added=False):
     return label_added
 
 
+# ─── Desired Drone Path (from target trajectory only) ────────────────────────
+
+def compute_desired_drone_path(df, desired_dist):
+    """
+    Compute the desired drone position purely from the target's trajectory.
+    Places the drone desired_dist meters BEHIND the target along its
+    direction of travel. When the target is stationary, the last known
+    heading is held.
+    """
+    tx = df["target_x"].values
+    ty = df["target_y"].values
+    tz = df["target_z"].values
+
+    # To avoid the desired path flipping 180 degrees when the target walks backwards
+    # (as in approach_retreat), we cannot use the target's velocity vector.
+    # Instead, we use the vector from the target to the drone (Line of Sight).
+    # To prevent the green line from wiggling when the drone wiggles, we apply
+    # a heavy moving average to the drone's position first.
+    dx = df["drone_x"].values
+    dy = df["drone_y"].values
+
+    # Heavy smoothing (e.g., 3 seconds at 20Hz = 61 samples)
+    window = min(61, len(dx) // 2 * 2 + 1)
+    if window >= 3:
+        dx_smooth = pd.Series(dx).rolling(window=window, center=True, min_periods=1).mean().values
+        dy_smooth = pd.Series(dy).rolling(window=window, center=True, min_periods=1).mean().values
+    else:
+        dx_smooth, dy_smooth = dx, dy
+
+    # Compute vector FROM target TO smoothed drone
+    vec_x = dx_smooth - tx
+    vec_y = dy_smooth - ty
+    
+    # Normalize to get heading
+    dist_2d = np.sqrt(vec_x**2 + vec_y**2)
+    heading_x = np.zeros_like(vec_x)
+    heading_y = np.zeros_like(vec_y)
+    
+    valid = dist_2d > 1e-4
+    heading_x[valid] = vec_x[valid] / dist_2d[valid]
+    heading_y[valid] = vec_y[valid] / dist_2d[valid]
+
+    # For invalid frames (target and drone perfectly overlapping horizontally),
+    # forward-fill the last valid heading.
+    last_hx, last_hy = 1.0, 0.0
+    for i in range(len(heading_x)):
+        if valid[i]:
+            last_hx, last_hy = heading_x[i], heading_y[i]
+        else:
+            heading_x[i], heading_y[i] = last_hx, last_hy
+
+    # Place desired drone at desired_dist along the smoothed LOS vector
+    df["desired_drone_x"] = tx + heading_x * desired_dist
+    df["desired_drone_y"] = ty + heading_y * desired_dist
+    df["desired_drone_z"] = tz  # Drone must match target altitude exactly to keep e_y=0
+
+
 # ─── Metrics Computation ─────────────────────────────────────────────────────
 
 def compute_scenario_metrics(df):
@@ -124,17 +181,10 @@ def plot_trajectory_2d(df, plots_dir, basename, desired_dist=None):
 
     time_s = df["time_s"].values
 
-    # Calculate desired drone position (Target Object shifted by desired_dist along LOS)
+    # Calculate desired drone position from target's direction of travel
     d_dist = desired_dist if desired_dist is not None else 5.0
-    dx = df["target_x"] - df["drone_x"]
-    dy = df["target_y"] - df["drone_y"]
-    dz = df["target_z"] - df["drone_z"]
-    dist_3d = np.sqrt(dx**2 + dy**2 + dz**2)
-    dist_3d = np.where(dist_3d == 0, 1e-6, dist_3d)
-    
-    df["desired_drone_x"] = df["target_x"] - (dx / dist_3d) * d_dist
-    df["desired_drone_y"] = df["target_y"] - (dy / dist_3d) * d_dist
-    df["desired_drone_z"] = df["target_z"] - (dz / dist_3d) * d_dist
+    if "desired_drone_x" not in df.columns:
+        compute_desired_drone_path(df, d_dist)
 
     # ── Top-down view (East vs North in NED) ──────────────────────────────
     # NED: X=North, Y=East. Plot with East on x-axis, North on y-axis.
@@ -183,6 +233,13 @@ def plot_trajectory_2d(df, plots_dir, basename, desired_dist=None):
     ax_alt.set_xlabel("Time (s)", fontsize=12)
     ax_alt.set_ylabel("Altitude (m)", fontsize=12)
     ax_alt.margins(0.1)
+    
+    # Enforce a minimum Y span so small noise isn't magnified
+    ymin, ymax = ax_alt.get_ylim()
+    if (ymax - ymin) < 2.0:
+        mid = (ymax + ymin) / 2
+        ax_alt.set_ylim(mid - 1.0, mid + 1.0)
+
     ax_alt.legend(fontsize=9, loc='upper center', bbox_to_anchor=(0.5, -0.12), ncol=2)
     ax_alt.set_title("Altitude Profile", fontsize=13, fontweight='bold')
     style_axes([ax_alt], time_s)
@@ -202,14 +259,7 @@ def plot_trajectory_3d(df, plots_dir, basename, desired_dist=None, interactive=F
 
     if "desired_drone_x" not in df.columns:
         d_dist = desired_dist if desired_dist is not None else 5.0
-        dx = df["target_x"] - df["drone_x"]
-        dy = df["target_y"] - df["drone_y"]
-        dz = df["target_z"] - df["drone_z"]
-        dist_3d = np.sqrt(dx**2 + dy**2 + dz**2)
-        dist_3d = np.where(dist_3d == 0, 1e-6, dist_3d)
-        df["desired_drone_x"] = df["target_x"] - (dx / dist_3d) * d_dist
-        df["desired_drone_y"] = df["target_y"] - (dy / dist_3d) * d_dist
-        df["desired_drone_z"] = df["target_z"] - (dz / dist_3d) * d_dist
+        compute_desired_drone_path(df, d_dist)
 
     # NED: X=North, Y=East, Z=Down (so -Z is altitude)
     ax_3d.plot(df["target_y"], df["target_x"], -df["target_z"], 'r--', linewidth=2.5, alpha=0.8, label="Target Object")
@@ -229,6 +279,12 @@ def plot_trajectory_3d(df, plots_dir, basename, desired_dist=None, interactive=F
     ax_3d.set_xlabel("East (m)", fontsize=10)
     ax_3d.set_ylabel("North (m)", fontsize=10)
     ax_3d.set_zlabel("Altitude (m)", fontsize=10)
+    
+    # Enforce a minimum Z span so small noise isn't magnified
+    zmin, zmax = ax_3d.get_zlim()
+    if (zmax - zmin) < 2.0:
+        mid = (zmax + zmin) / 2
+        ax_3d.set_zlim(mid - 1.0, mid + 1.0)
     
     scenario = df["scenario"].iloc[0] if "scenario" in df.columns else "unknown"
     noise_mode = df["noise_mode"].iloc[0] if "noise_mode" in df.columns else "?"
