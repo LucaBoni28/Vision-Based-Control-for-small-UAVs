@@ -480,9 +480,8 @@ class MissionController:
                     v_x_request = self._k_p_vx * e_dist_m + self._k_d_vx * derivative_dist_m
 
                     # Deadzones & Safety Limits
-                    # Deadzones prevent the drone from twitching when it's "close enough"
-                    if abs(omega_z) < self.config.control.yaw_deadzone: omega_z = 0
-                    if abs(v_z) < self.config.control.vz_deadzone: v_z = 0
+                    if abs(e_x) < self.config.control.yaw_deadzone: omega_z = 0.0
+                    if abs(e_y_compensated) < self.config.control.vz_deadzone: v_z = 0.0
                     if abs(e_dist_m) < self.config.control.dist_deadzone: v_x_request = 0.0
 
                     # Speed Limit: If the target is way off center (e_mag >= r_stop), 

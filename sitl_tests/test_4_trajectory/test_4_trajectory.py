@@ -305,9 +305,9 @@ def run_scenario(args, config, flight, trajectory, noise_mode, run_name):
             v_x_request = k_p_vx * e_dist_m + k_d_vx * d_dist
 
             # ── Deadzones ─────────────────────────────────────────────────
-            if abs(omega_z) < c.yaw_deadzone:
+            if abs(e_x) < c.yaw_deadzone:
                 omega_z = 0.0
-            if abs(v_z) < c.vz_deadzone:
+            if abs(e_y) < c.vz_deadzone:
                 v_z = 0.0
             if abs(e_dist_m) < c.dist_deadzone:
                 v_x_request = 0.0
@@ -460,14 +460,11 @@ def main():
         f.write(f"latency_frames: {args.latency_frames}\n")
         f.write(f"dropout_prob: {args.dropout_prob}\n")
         f.write(f"id_switch_prob: {args.id_switch_prob}\n")
-        f.write(f"\nCONTROL GAINS (from config)\n")
+        f.write(f"\nCONTROL PARAMETERS (from config)\n")
         f.write("=" * 30 + "\n")
-        f.write(f"k_p_yaw: {config.control.k_p_yaw}\n")
-        f.write(f"k_d_yaw: {config.control.k_d_yaw}\n")
-        f.write(f"k_p_vz: {config.control.k_p_vz}\n")
-        f.write(f"k_d_vz: {config.control.k_d_vz}\n")
-        f.write(f"k_p_vx: {config.control.k_p_vx}\n")
-        f.write(f"k_d_vx: {config.control.k_d_vx}\n")
+        f.write("deadzone_type: error-based\n")
+        for key, value in vars(config.control).items():
+            f.write(f"{key}: {value}\n")
         f.write(f"desired_stopping_distance: {config.calibration.desired_stopping_distance_m}\n")
 
     print(f"\n  Run directory: {run_dir}\n")
