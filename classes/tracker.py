@@ -1,7 +1,8 @@
 ###############################################################################
 # Author: Luca Boninsegna
 # Date:   04/07/2026
-# Descr:  Definition of the Tracker abstraction and its concrete implementations, which encapsulate the object tracking logic for the tracking system
+# Descr:  Definition of the Tracker abstraction and its concrete implementations,
+#         which encapsulate the object tracking logic for the tracking system
 ###############################################################################
 
 from abc import ABC, abstractmethod
@@ -11,7 +12,7 @@ from typing import List, Tuple
 from classes.config import DetectionConfig, DeepSortConfig
 from classes.detector import YoloDetector
 
-
+# Definition of the Track class
 @dataclass
 class Track:
     """One tracked object, backend-agnostic."""
@@ -36,6 +37,7 @@ class _UltralyticsNativeTracker(Tracker):
 
     # Runs detection and tracking on the given frame, returning a list of Track objects representing the currently tracked objects
     def track(self, frame) -> List[Track]:
+        # Perform detection and tracking on the given frame
         results = self._model.track(
             frame,
             classes=self._detection_config.classes,
@@ -45,28 +47,31 @@ class _UltralyticsNativeTracker(Tracker):
             verbose=False,
         )
 
+        # If no tracks are found, return an empty list
         if results[0].boxes.id is None:
             return []
 
+        # Extract bounding boxes and track IDs
         boxes = results[0].boxes.xyxy.cpu().numpy()
         ids = results[0].boxes.id.int().cpu().numpy()
 
+        # Convert to Track objects
         return [
             Track(id=int(track_id), bbox=tuple(box))
             for box, track_id in zip(boxes, ids)
         ]
 
-# Concrete implementation of the Tracker interface that uses the ByteTrack algorithm for tracking supported by Ultralytics
+# Concrete implementation of the Tracker interface that uses the ByteTrack algorithm supported by Ultralytics
 class ByteTrackTracker(_UltralyticsNativeTracker):
     def __init__(self, model, detection_config: DetectionConfig, tracker_yaml: str = "bytetrack.yaml"):
         super().__init__(model, detection_config, tracker_yaml)
 
-# Concrete implementation of the Tracker interface that uses the BotSort algorithm for tracking supported by Ultralytics
+# Concrete implementation of the Tracker interface that uses the BotSort algorithm supported by Ultralytics
 class BotSortTracker(_UltralyticsNativeTracker):
     def __init__(self, model, detection_config: DetectionConfig, tracker_yaml: str = "botsort.yaml"):
         super().__init__(model, detection_config, tracker_yaml)
 
-# Concrete implementation of the Tracker interface that uses the DeepSort algorithm for tracking,
+# Concrete implementation of the Tracker interface that uses the DeepSort algorithm,
 # which requires a separate detection pass and conversion of detections into the format expected by the DeepSort library
 class DeepSortTracker(Tracker):
     # Initializes the DeepSortTracker with the given YOLO model, detection configuration, and DeepSort configuration
@@ -79,7 +84,10 @@ class DeepSortTracker(Tracker):
                 "package isn't installed. Run: pip install deep-sort-realtime"
             ) from e
 
+        # Initialize the YOLO detector
         self._detector = YoloDetector(model, detection_config)
+
+        # Initialize the DeepSort tracker
         self._deepsort = DeepSort(
             max_age=deepsort_config.max_age,
             embedder=deepsort_config.embedder,
@@ -89,18 +97,23 @@ class DeepSortTracker(Tracker):
             max_iou_distance=deepsort_config.max_iou_distance,
         )
 
-    # Runs detection on the given frame, converts the detections into the format expected by DeepSort, and updates the DeepSort tracker to return a list of currently tracked objects as Track instances
+    # Runs detection on the given frame, converts the detections into the format expected by DeepSort,
+    # and updates the DeepSort tracker to return a list of currently tracked objects as Track instances
     def track(self, frame) -> List[Track]:
+        # Perform detection on the given frame
         detections = self._detector.detect(frame)
 
+        # Convert the detections into the format expected by DeepSort
         detections_for_tracker = [
             ([d.bbox[0], d.bbox[1], d.bbox[2] - d.bbox[0], d.bbox[3] - d.bbox[1]], d.confidence, d.class_id)
             for d in detections
         ]
 
+        # Update the DeepSort tracker
         raw_tracks = self._deepsort.update_tracks(detections_for_tracker, frame=frame)
 
         tracks = []
+        # Convert to Track objects
         for t in raw_tracks:
             if not t.is_confirmed():
                 continue

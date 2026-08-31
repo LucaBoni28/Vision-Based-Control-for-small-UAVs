@@ -1,17 +1,19 @@
 ###############################################################################
 # Author: Luca Boninsegna
 # Date:   04/07/2026
-# Descr:  Definition of the AppConfig class, which loads and validates the configuration from a YAML file
+# Descr:  Definition of the AppConfig class, which loads and validates the configuration
+#         parameters, camera settings, MAVLink connection details, model paths, control gains, 
+#         tracker settings, distance estimation parameters, and more from the YAML file.
 ###############################################################################
 
 from __future__ import annotations
-
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
 import yaml
 
+# Definition of the CameraConfig class
 @dataclass
 class CameraConfig:
     sensor_id: int
@@ -19,8 +21,8 @@ class CameraConfig:
     height: int
     framerate: int
 
+    # Builds the GStreamer pipeline string from the camera settings
     def gst_pipeline(self) -> str:
-        """Builds the GStreamer pipeline string from these parameters."""
         return (
             f"nvarguscamerasrc sensor-id={self.sensor_id} ! "
             f"video/x-raw(memory:NVMM), width={self.width}, height={self.height}, "
@@ -32,6 +34,7 @@ class CameraConfig:
             "appsink"
         )
 
+# Definition of the MavlinkConfig class
 @dataclass
 class MavlinkConfig:
     connection: str
@@ -42,6 +45,7 @@ class MavlinkConfig:
     baud: int
     sitl: bool = False
 
+    # Returns the MAVLink telemetry output string based on the SITL setting
     @property
     def telemetry_output(self) -> str:
         if self.sitl:
@@ -49,29 +53,31 @@ class MavlinkConfig:
         return f"udpout:{self.ground_station_ip}:14560"
 
 
+# Definition of the VideoLinkConfig class
 @dataclass
 class VideoLinkConfig:
     host: str
     port: int
 
+# Definition of the MjpegServerConfig class
 @dataclass
 class MjpegServerConfig:
     enabled: bool
     port: int
 
-
+# Definition of the ModelConfig class
 @dataclass
 class ModelConfig:
     path: str
     task: str
 
-
+# Definition of the DetectionConfig class
 @dataclass
 class DetectionConfig:
     classes: List[int]
     confidence: float
 
-
+# Definition of the DeepSortConfig class
 @dataclass
 class DeepSortConfig:
     max_age: int
@@ -81,7 +87,7 @@ class DeepSortConfig:
     n_init: int
     max_iou_distance: float
 
-
+# Definition of the TrackerConfig class
 @dataclass
 class TrackerConfig:
     backend: str
@@ -89,7 +95,7 @@ class TrackerConfig:
     max_timeout_frames: int
     deepsort: "DeepSortConfig"
 
-
+# Definition of the ControlConfig class
 @dataclass
 class ControlConfig:
     k_p_yaw: float
@@ -108,21 +114,21 @@ class ControlConfig:
     max_vz: float
     max_yaw_rate: float
 
-
+# Definition of the CalibrationConfig class
 @dataclass
 class CalibrationConfig:
     file: str
     desired_stopping_distance_m: float
     optical_constant: float
-    frames_per_sample: int = 30  # Number of frames to capture and average per distance sample
 
+# Definition of the MissionBehaviorConfig class
 @dataclass
 class MissionBehaviorConfig:
     min_takeoff_alt_m: float
     hover_stability_time_s: float
     hover_stability_threshold_m: float
 
-
+# Definition of the DisplayConfig class
 @dataclass
 class DisplayConfig:
     stream_width: int
@@ -131,21 +137,23 @@ class DisplayConfig:
     ground_station_window_width: int
     ground_station_window_height: int
 
-
+# Definition of the TargetSelectionConfig class
 @dataclass
 class TargetSelectionConfig:
     mode: str
 
+# Definition of the CommandLinkConfig class
 @dataclass
 class CommandLinkConfig:
     jetson_host: str
     port: int
 
+# Definition of the PitchCompensationConfig class
 @dataclass
 class PitchCompensationConfig:
     mode: str
 
-# Defines the AppConfig class, which loads and validates the configuration from a YAML file
+# Definition of the AppConfig class, which loads and validates the configuration from a YAML file
 @dataclass
 class AppConfig:
     mavlink: MavlinkConfig
@@ -162,6 +170,7 @@ class AppConfig:
     pitch_compensation: PitchCompensationConfig
     mission_behavior: MissionBehaviorConfig
     mjpeg_server: MjpegServerConfig
+
     # Loads the configuration from a YAML file at the given path and returns an AppConfig instance
     @staticmethod
     def load(path: str | Path = "config.yaml") -> "AppConfig":
@@ -171,11 +180,13 @@ class AppConfig:
                 f"Config file not found at '{path}'. "
                 "Copy config.yaml next to your script, or pass the correct path."
             )
-
+        
+        # Opens the configuration file and loads the YAML content
         with open(path, "r") as f:
             raw = yaml.safe_load(f)
 
         try:
+            # Creates the AppConfig instance
             config = AppConfig(
                 mavlink=MavlinkConfig(**raw["mavlink"]),
                 video_link=VideoLinkConfig(**raw["video_link"]),
@@ -248,7 +259,6 @@ class AppConfig:
             raise ValueError(
                 "Invalid config.yaml:\n  - " + "\n  - ".join(errors)
             )
-
 
 if __name__ == "__main__":
     cfg = AppConfig.load("classes/config.yaml")

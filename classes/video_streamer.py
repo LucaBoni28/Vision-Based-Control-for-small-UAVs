@@ -150,45 +150,27 @@ class StreamReceiver:
         return True
 
 
-###############################################################################
-# MjpegServer — Jetson-side HTTP server that streams MJPEG to any browser.
-#
-# Usage:
-#   server = MjpegServer(config.mjpeg_server)
-#   server.start()
-#   ...main loop...
-#   server.push_frame(frame, jpeg_quality)   # call once per processed frame
-#
-# Open on any device connected to Tailscale (or same LAN):
-#   http://<jetson-tailscale-ip>:8080
-###############################################################################
-
+# Implements an HTTP MJPEG server that runs in a background daemon thread
+# This allows you to view the video stream on any device connected to Tailscale
 class MjpegServer:
-    """HTTP MJPEG server that runs in a background daemon thread."""
-
     _BOUNDARY = b"--jpgboundary"
 
     def __init__(self, config: MjpegServerConfig) -> None:
         self._config = config
         self._lock = threading.Lock()
-        self._latest_jpeg: bytes | None = None  # most-recent encoded frame
+        self._latest_jpeg: bytes | None = None
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
 
-    # ------------------------------------------------------------------ #
-    # Public API
-    # ------------------------------------------------------------------ #
-
+    # Starts the HTTP server in a background daemon thread
     def start(self) -> None:
-        """Start the HTTP server in a background daemon thread."""
         if not self._config.enabled:
             return
 
         server_instance = self  # capture for closure
 
+        # HTTP handler that serves MJPEG on any path
         class _Handler(BaseHTTPRequestHandler):
-            """Minimal HTTP handler — serves MJPEG on any path."""
-
             def do_GET(self):
                 if self.path == "/" or self.path == "/stream":
                     self._serve_stream()
@@ -209,7 +191,8 @@ class MjpegServer:
                         b"</body></html>"
                     )
                     self.wfile.write(html)
-
+            
+            # Serves the MJPEG stream on any path
             def _serve_stream(self):
                 self.send_response(200)
                 self.send_header(
@@ -257,12 +240,8 @@ class MjpegServer:
         self._thread.start()
         print(f"MJPEG HTTP server started — open http://<jetson-ip>:{self._config.port} in a browser")
 
+    # Encodes the given frame as JPEG and makes it available to connected HTTP clients
     def push_frame(self, frame, jpeg_quality: int = 70) -> None:
-        """Encode *frame* as JPEG and make it available to connected HTTP clients.
-
-        This is a non-blocking call — it simply overwrites the latest frame
-        in memory. If no clients are connected the frame is silently discarded.
-        """
         if not self._config.enabled:
             return
 
@@ -271,8 +250,8 @@ class MjpegServer:
             with self._lock:
                 self._latest_jpeg = buf.tobytes()
 
+    # Gracefully shuts down the HTTP server
     def stop(self) -> None:
-        """Gracefully shut down the HTTP server."""
         if self._server is not None:
             self._server.shutdown()
             self._server = None

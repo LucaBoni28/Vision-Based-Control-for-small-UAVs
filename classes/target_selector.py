@@ -25,11 +25,6 @@ class FirstDetectedSelector(TargetSelector):
 
 # Concrete implementation of TargetSelector that waits for an operator click relayed from the ground station,
 # then locks onto the track whose bounding box contains the click position (x1 < click_x < x2 and y1 < click_y < y2).
-# If multiple boxes contain the click, the one with the largest area is chosen (closest object).
-# A click outside all bounding boxes is ignored.
-#
-# The click is injected externally via set_pending_click(), called by MissionController
-# when it receives a click command from the CommandReceiver.
 class ManualClickSelector(TargetSelector):
     # Initializes the ManualClickSelector with frame dimensions
     def __init__(
@@ -48,7 +43,6 @@ class ManualClickSelector(TargetSelector):
 
     # Selects the track ID of the detected object whose bounding box contains the click position.
     # If multiple boxes contain the click, the one with the largest area is chosen.
-    # Returns None if no click or no box contains the click.
     def select(self, tracks: List[Track]) -> Optional[int]:
         if not tracks:
             return None
@@ -80,7 +74,7 @@ class ManualClickSelector(TargetSelector):
         print(f"Manual selection: locking onto track {best_id} (click inside bbox, area={best_area:.0f}px)")
         return best_id
 
-# Concrete implementation of TargetSelector that locks onto the detected object with the largest bounding-box area, which is assumed to be the closest to the drone
+# Concrete implementation of TargetSelector that locks onto the detected object with the largest bounding-box area
 class NearestObjectSelector(TargetSelector):
     # Selects the track ID of the detected object with the largest bounding-box area, or None if no tracks are present
     def select(self, tracks: List[Track]) -> Optional[int]:

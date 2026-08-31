@@ -91,7 +91,6 @@ class CommandSender:
         return True
 
     # Sends a calibration start command and waits for Jetson to confirm or reject.
-    # Returns True if calibration started successfully, False if rejected (e.g. drone armed) or timed out.
     def send_calibrate_start(self, distance_m: float) -> bool:
         self._flush_socket()
         message = struct.pack(_FMT_CAL_START, CMD_CALIBRATE_START, distance_m)

@@ -1,7 +1,7 @@
 ###############################################################################
 # Author: Luca Boninsegna
 # Date:   04/07/2026
-# Descr:  Definition of the DistanceEstimator class, which encapsulates the bounding-box-area to distance calibration logic.
+# Descr:  Definition of the DistanceEstimator class, which encapsulates the bounding-box-area to distance calibration logic
 #
 #         Calibration is non-blocking and driven externally by MissionController:
 #           1. start_recording(distance_m)  — enter calibration mode
@@ -103,8 +103,8 @@ class DistanceEstimator:
             return 0.0
         return math.sqrt(self._optical_constant / bbox_area_px)
 
-    # ── Non-blocking calibration methods (called by MissionController) ──────
 
+    # Calibration methods
     # Enters calibration recording mode at the given known distance
     def start_recording(self, distance_m: float) -> None:
         self._recording = True

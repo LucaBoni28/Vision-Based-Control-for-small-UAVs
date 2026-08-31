@@ -11,7 +11,7 @@ from typing import List, Tuple
 
 from classes.config import DetectionConfig
 
-
+# Definition of the Detection class
 @dataclass
 class Detection:
     bbox: Tuple[float, float, float, float]  # x1, y1, x2, y2 — clamped to frame bounds
@@ -23,6 +23,7 @@ class Detector(ABC):
     @abstractmethod
     def detect(self, frame) -> List[Detection]:
         raise NotImplementedError
+
 
 # Concrete implementation of the Detector interface using the Ultralytics YOLO model
 class YoloDetector(Detector):
@@ -44,7 +45,7 @@ class YoloDetector(Detector):
             verbose=False,
         )
 
-        # Process the results to extract bounding boxes, confidence scores, and class IDs, filtering out small boxes at the edges of the frame
+        # Process the results to extract bounding boxes, confidence scores, and class IDs
         detections = []
         for box in results[0].boxes:
             raw_x1, raw_y1, raw_x2, raw_y2 = box.xyxy[0].cpu().numpy()
@@ -54,8 +55,9 @@ class YoloDetector(Detector):
             x2 = min(img_w, int(raw_x2))
             y2 = min(img_h, int(raw_y2))
 
+            # Filtering out small boxes at the edges of the frame
             if (x2 - x1) < self._min_box_size_px or (y2 - y1) < self._min_box_size_px:
-                continue  # filter degenerate boxes at the screen edges
+                continue
 
             detections.append(Detection(
                 bbox=(x1, y1, x2, y2),

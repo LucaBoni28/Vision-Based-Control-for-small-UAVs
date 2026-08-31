@@ -57,14 +57,14 @@ def main() -> None:
     streamer = VideoStreamer(config.video_link)
     streamer.connect()
 
-    # Initialize the MJPEG HTTP server (for phone/browser viewing)
+    # Initialize the MJPEG HTTP server (for phone/tablet viewing)
     mjpeg_server = MjpegServer(config.mjpeg_server)
     mjpeg_server.start()
 
     # Initialize the distance estimator
     distance_estimator = DistanceEstimator(config.calibration)
 
-    # Initialize the camera source (do this last to avoid GStreamer buffer overflow)
+    # Initialize the camera source
     camera = CSICameraSource(config.camera)
     try:
         camera.open()

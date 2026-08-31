@@ -2,7 +2,8 @@
 # Author: Luca Boninsegna
 # Date:   04/07/2026
 # Descr:  Definition of the FlightController class, which handles the MAVLink connection
-#         to the ArduPilot flight controller and provides methods to poll attitude and position, as well as send velocity commands
+#         to the ArduPilot flight controller and provides methods to poll attitude and position,
+#         as well as send velocity commands
 ###############################################################################
 
 from dataclasses import dataclass
@@ -16,7 +17,7 @@ from pymavlink import mavutil
 
 from classes.config import MavlinkConfig
 
-
+# Definition of attitude and position data structures
 @dataclass
 class Attitude:
     roll: float   # radians
@@ -24,7 +25,7 @@ class Attitude:
     yaw: float    # radians, 0 = North, clockwise positive (compass convention)
     yawspeed: float = 0.0 # rad/s
 
-
+# Definitiong of local position and velocity in the NED frame
 @dataclass
 class LocalPositionNED:
     """Drone position and velocity in the local NED (North-East-Down) frame."""
@@ -35,8 +36,7 @@ class LocalPositionNED:
     vy: float   # m/s, East
     vz: float   # m/s, Down
 
-
-
+# Implements the MAVLink connection to the ArduPilot flight controller
 class FlightController:
     # Initializes the FlightController with the given MAVLink configuration
     def __init__(self, mavlink_config: MavlinkConfig):
@@ -79,6 +79,7 @@ class FlightController:
             print(f"[WARNING] Telemetry output unavailable ({e}). Continuing without it.")
             self.telemetry_output = None
 
+        # Request attitude data stream from the primary link
         self.master.mav.request_data_stream_send(
             self.master.target_system,
             self.master.target_component,
@@ -96,6 +97,7 @@ class FlightController:
             1,
         )
 
+        # Request telemetry data from the simulation if SITL is enabled
         if self.telemetry_output and self._config.sitl:
             try:
                 # Request position from the simulation
@@ -105,7 +107,7 @@ class FlightController:
                     self._config.attitude_stream_rate_hz,
                     1,
                 )
-                # Also request ATTITUDE (EXTRA1) from SITL — this gives us real yawspeed
+                # Request attitude from SITL
                 self.telemetry_output.mav.request_data_stream_send(
                     1, 1,
                     mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
@@ -116,6 +118,7 @@ class FlightController:
                 pass
 
     # Fetches a parameter from the flight controller via MAVLink
+    # This is needed to get the camera mount configuration
     def get_param(self, param_id: str, timeout: float = 3.0) -> Optional[float]:
         if not self.master:
             return None
@@ -136,8 +139,9 @@ class FlightController:
                     return msg.param_value
         return None
 
-    # Drains the MAVLink socket buffers for both the physical drone and SITL simulation
+    # Polls for messages and updates the drone's attitude and position
     def update(self) -> None:
+        # Update telemetry data from the actual flight controller
         if self.master:
             while True:
                 msg = self.master.recv_match(blocking=False)
@@ -163,18 +167,15 @@ class FlightController:
                     if not getattr(self, '_sitl_attitude_active', False):
                         self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, yawspeed=msg.yawspeed)
 
+        # Update telemetry data from the simulation
         if self.telemetry_output:
-            # Before draining, check if the TCP socket has hit EOF.
-            # pymavlink's handle_eof() calls reconnect() which is a no-op when
-            # autoreconnect=False, so NO exception is ever raised — recv_match()
-            # just silently returns None forever on a dead socket.
-            # We detect this with select(): if the fd is readable but recv_match
-            # returns no message, the remote end closed the connection.
+            # Check if the MAVLink socket is still open
             if self._is_telemetry_dead():
                 print("[WARNING] Telemetry socket closed by peer (Mission Planner disconnected). "
                       "Will reconnect when it is available again.")
                 self._close_telemetry()
             else:
+                # Poll for messages and update the drone's attitude and position
                 try:
                     while True:
                         msg = self.telemetry_output.recv_match(blocking=False)
@@ -218,13 +219,13 @@ class FlightController:
     def poll_heartbeat(self) -> None:
         if not self.master:
             return
-            
+
+        # Call the update method to update the drone's attitude and position
         self.update()
 
         current_time = time.time()
-        
-        # Automatically try to reconnect telemetry output if it was lost
-        # (applies to both SITL/TCP and real-drone/UDP modes)
+         
+        # If the telemetry output is None, try to reconnect to the drone
         if self.telemetry_output is None:
             if not hasattr(self, '_last_telemetry_reconnect') or current_time - getattr(self, '_last_telemetry_reconnect') > 5.0:
                 self._last_telemetry_reconnect = current_time
@@ -236,8 +237,7 @@ class FlightController:
                         source_component=self._config.source_component,
                     )
                     print(f"[TELEMETRY] Reconnected to {self._config.telemetry_output}. Waiting for heartbeat...")
-                    # Reset SITL override flags — we need a fresh heartbeat/position
-                    # from the new session before trusting its data again
+                    # Reset SITL override flags — we need a fresh heartbeat/position from the new session before trusting its data again
                     self._sitl_heartbeat_active = False
                     self._sitl_alt_active = False
                     if self._config.sitl:
@@ -286,8 +286,8 @@ class FlightController:
     def target_component(self):
         return self.master.target_component
 
+    # Sets a MAVLink parameter dynamically (useful for automated tuning)
     def set_parameter(self, param_id: str, param_value: float):
-        """Set a MAVLink parameter dynamically (useful for automated tuning)."""
         param_id_bytes = param_id.encode('utf-8')[:16]
         self.master.mav.param_set_send(
             self.target_system, self.target_component,
@@ -297,6 +297,7 @@ class FlightController:
         )
         print(f"MAVLink: Set parameter {param_id} = {param_value}")
 
+    # Gets the current flight mode of the drone
     def get_flight_mode(self) -> str:
         if self._last_heartbeat is None:
             return "UNKNOWN"
@@ -308,6 +309,7 @@ class FlightController:
                         return name
         return mavutil.mode_string_v10(self._last_heartbeat)
 
+    # Sets the flight mode of the drone
     def set_flight_mode(self, mode: str) -> None:
         if not self.master or not hasattr(self.master, 'mode_mapping'):
             return
@@ -359,11 +361,7 @@ class FlightController:
         self._sitl_alt_active = False
         self._sitl_pos_active = False
 
-    # Returns True if the telemetry socket has hit EOF (remote peer closed connection).
-    # pymavlink's mavtcp.handle_eof() calls reconnect() which is a no-op when
-    # autoreconnect=False, so no exception is ever raised — recv_match() silently
-    # returns None forever on a dead socket. We use select() + MSG_PEEK to detect
-    # this: if the fd is readable but a peek yields 0 bytes, the connection is gone.
+    # Returns True if the telemetry socket has hit EOF (remote peer closed connection)
     def _is_telemetry_dead(self) -> bool:
         try:
             port = getattr(self.telemetry_output, 'port', None)

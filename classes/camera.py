@@ -5,8 +5,8 @@
 #         which handles the Jetson Orin NX's CSI camera via a GStreamer pipeline
 ###############################################################################
 
-from abc import ABC, abstractmethod     # Import abstract base class and abstract method decorators
-import cv2                              # Import OpenCV for video capture and image processing
+from abc import ABC, abstractmethod             # Import abstract base class and abstract method decorators
+import cv2                                      # Import OpenCV for video capture and image processing
 from classes.config import CameraConfig         # Import CameraConfig for configuration YAML file
 
 # Abstract base class for any camera source that can provide a stream of BGR frames to the MissionController
@@ -17,7 +17,6 @@ class CameraSource(ABC):
     def open(self) -> None:
         raise NotImplementedError
 
-    # 
     @abstractmethod
     def read(self):
         raise NotImplementedError
@@ -35,8 +34,8 @@ class CSICameraSource(CameraSource):
 
     # Initializes the CSICameraSource with the given camera configuration
     def __init__(self, camera_config: CameraConfig):
-        self._config = camera_config
-        self._cap = None
+        self._config = camera_config # Camera configuration from YAML file
+        self._cap = None             # OpenCV video capture object
 
     # Opens the CSI camera using a GStreamer pipeline defined in the configuration
     def open(self) -> None:
@@ -51,6 +50,7 @@ class CSICameraSource(CameraSource):
         return self._cap.read()
 
     # Releases the CSI camera
+    # Safely shuts down the camera hardware, frees memory, and unlocks the device so other programs can use it
     def release(self) -> None:
         if self._cap is not None:
             self._cap.release()

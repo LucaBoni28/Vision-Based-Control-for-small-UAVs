@@ -41,19 +41,16 @@ def main() -> None:
     # Always create a command sender (used for clicks + calibration commands)
     command_sender = CommandSender(config.command_link)
 
-    # The displayed image is always stream_width × stream_height.
     # OpenCV's mouse callback already reports (x, y) in image pixel
-    # coordinates (it remaps internally for WINDOW_NORMAL), so we
-    # normalize directly by the stream image dimensions.
+    # coordinates (it remaps internally for WINDOW_NORMAL), so we normalize directly by the stream image dimensions.
     stream_w = config.display.stream_width
     stream_h = config.display.stream_height
 
-    # Set up mouse callback for manual target selection (always registered)
+    # Set up mouse callback for manual target selection
     def on_mouse(event, x, y, flags, userdata):
         if event == cv2.EVENT_LBUTTONDOWN:
             norm_x = x / stream_w
             norm_y = y / stream_h
-            # Clamp to [0, 1] to guard against edge-of-window clicks
             norm_x = max(0.0, min(1.0, norm_x))
             norm_y = max(0.0, min(1.0, norm_y))
             command_sender.send_click(norm_x, norm_y)
@@ -82,12 +79,12 @@ def main() -> None:
 
         elif key == ord('c'):
             if not calibrating:
-                # Check with Jetson first if calibration is allowed (e.g. drone not armed)
+                # Check with Jetson first if calibration is allowed
                 if not command_sender.send_calibrate_check():
                     print("Calibration check failed (rejected by Jetson).")
                     continue
 
-                # Prompt for distance on the PC terminal (this freezes the stream)
+                # Prompt for distance on the PC terminal
                 try:
                     dist_input = input("\n[Calibration] Enter the known distance in meters: ").strip()
                     distance_m = float(dist_input)
