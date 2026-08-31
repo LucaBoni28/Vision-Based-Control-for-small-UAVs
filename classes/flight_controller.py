@@ -42,6 +42,7 @@ class FlightController:
     def __init__(self, mavlink_config: MavlinkConfig):
         self._config = mavlink_config
         self.master = None
+        self.sitl_connection = None   # TCP link to SITL for receiving simulated state (only when sitl=true)
         self._attitude = Attitude(roll=0.0, pitch=0.0, yaw=0.0, yawspeed=0.0)
         self._last_heartbeat = None
         self._last_vel_log = 0.0
@@ -67,7 +68,7 @@ class FlightController:
         print(f"System ID: {self.master.target_system}")
         print(f"Component ID: {self.master.target_component}")
 
-        print(f"Waiting for Mission Planner to launch the simulation...")
+        # Telemetry mirror: always-on UDP link to Mission Planner for command visibility
         try:
             self.telemetry_output = mavutil.mavlink_connection(
                 self._config.telemetry_output,
@@ -79,7 +80,20 @@ class FlightController:
             print(f"[WARNING] Telemetry output unavailable ({e}). Continuing without it.")
             self.telemetry_output = None
 
-        # Request attitude data stream from the primary link
+        # SITL connection: bidirectional TCP link to receive simulated drone state (only in SITL mode)
+        if self._config.sitl:
+            print(f"Waiting for Mission Planner to launch the simulation...")
+            try:
+                self.sitl_connection = mavutil.mavlink_connection(
+                    self._config.sitl_connection,
+                    source_system=self._config.source_system,
+                    source_component=self._config.source_component,
+                )
+                print(f"SITL connection established to {self._config.sitl_connection}")
+            except Exception as e:
+                print(f"[WARNING] SITL connection unavailable ({e}). Continuing without it.")
+                self.sitl_connection = None
+
         self.master.mav.request_data_stream_send(
             self.master.target_system,
             self.master.target_component,
@@ -97,17 +111,16 @@ class FlightController:
             1,
         )
 
-        # Request telemetry data from the simulation if SITL is enabled
         if self.telemetry_output and self._config.sitl:
             try:
                 # Request position from the simulation
-                self.telemetry_output.mav.request_data_stream_send(
+                self.sitl_connection.mav.request_data_stream_send(
                     1, 1, # Default SITL target system/component
                     mavutil.mavlink.MAV_DATA_STREAM_POSITION,
                     self._config.attitude_stream_rate_hz,
                     1,
                 )
-                # Request attitude from SITL
+                # Also request ATTITUDE (EXTRA1) from SITL — this gives us real yawspeed
                 self.telemetry_output.mav.request_data_stream_send(
                     1, 1,
                     mavutil.mavlink.MAV_DATA_STREAM_EXTRA1,
@@ -167,18 +180,22 @@ class FlightController:
                     if not getattr(self, '_sitl_attitude_active', False):
                         self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, yawspeed=msg.yawspeed)
 
-        # Update telemetry data from the simulation
         if self.telemetry_output:
-            # Check if the MAVLink socket is still open
+            # Before draining, check if the TCP socket has hit EOF.
+            # pymavlink's handle_eof() calls reconnect() which is a no-op when
+            # autoreconnect=False, so NO exception is ever raised — recv_match()
+            # just silently returns None forever on a dead socket.
+            # We detect this with select(): if the fd is readable but recv_match
+            # returns no message, the remote end closed the connection.
             if self._is_telemetry_dead():
                 print("[WARNING] Telemetry socket closed by peer (Mission Planner disconnected). "
                       "Will reconnect when it is available again.")
-                self._close_telemetry()
+                self._close_sitl()
             else:
                 # Poll for messages and update the drone's attitude and position
                 try:
                     while True:
-                        msg = self.telemetry_output.recv_match(blocking=False)
+                        msg = self.sitl_connection.recv_match(blocking=False)
                         if not msg:
                             break
 
@@ -209,11 +226,11 @@ class FlightController:
                             self._attitude = Attitude(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw, yawspeed=msg.yawspeed)
 
                 except (EOFError, ConnectionResetError, OSError) as e:
-                    print(f"[WARNING] Telemetry socket lost ({type(e).__name__}): {e}. Will reconnect when Mission Planner is available.")
-                    self._close_telemetry()
+                    print(f"[WARNING] SITL socket lost ({type(e).__name__}): {e}. Will reconnect when Mission Planner is available.")
+                    self._close_sitl()
                 except Exception as e:
-                    print(f"[WARNING] Telemetry receive error ({type(e).__name__}): {e}. Will reconnect.")
-                    self._close_telemetry()
+                    print(f"[WARNING] SITL receive error ({type(e).__name__}): {e}. Will reconnect.")
+                    self._close_sitl()
 
     # Polls for a new HEARTBEAT message from the flight controller, updating the stored heartbeat
     def poll_heartbeat(self) -> None:
@@ -224,33 +241,34 @@ class FlightController:
         self.update()
 
         current_time = time.time()
-         
-        # If the telemetry output is None, try to reconnect to the drone
+        
+        # Automatically try to reconnect telemetry output if it was lost
+        # (applies to both SITL/TCP and real-drone/UDP modes)
         if self.telemetry_output is None:
             if not hasattr(self, '_last_telemetry_reconnect') or current_time - getattr(self, '_last_telemetry_reconnect') > 5.0:
                 self._last_telemetry_reconnect = current_time
                 print(f"[TELEMETRY] Attempting to reconnect to {self._config.telemetry_output}...")
                 try:
-                    self.telemetry_output = mavutil.mavlink_connection(
-                        self._config.telemetry_output,
+                    self.sitl_connection = mavutil.mavlink_connection(
+                        self._config.sitl_connection,
                         source_system=self._config.source_system,
                         source_component=self._config.source_component,
                     )
                     print(f"[TELEMETRY] Reconnected to {self._config.telemetry_output}. Waiting for heartbeat...")
-                    # Reset SITL override flags — we need a fresh heartbeat/position from the new session before trusting its data again
+                    # Reset SITL override flags — we need a fresh heartbeat/position
+                    # from the new session before trusting its data again
                     self._sitl_heartbeat_active = False
                     self._sitl_alt_active = False
-                    if self._config.sitl:
-                        # Re-request position stream from the SITL simulation
-                        self.telemetry_output.mav.request_data_stream_send(
-                            1, 1,
-                            mavutil.mavlink.MAV_DATA_STREAM_POSITION,
-                            self._config.attitude_stream_rate_hz,
-                            1,
-                        )
+                    # Re-request position stream from the SITL simulation
+                    self.sitl_connection.mav.request_data_stream_send(
+                        1, 1,
+                        mavutil.mavlink.MAV_DATA_STREAM_POSITION,
+                        self._config.attitude_stream_rate_hz,
+                        1,
+                    )
                 except Exception as e:
-                    print(f"[TELEMETRY] Reconnection attempt failed ({e}). Will retry in 5s.")
-                    self.telemetry_output = None  # Ensure it stays None so next retry triggers
+                    print(f"[SITL] Reconnection attempt failed ({e}). Will retry in 5s.")
+                    self.sitl_connection = None  # Ensure it stays None so next retry triggers
                     
         # Send our own companion computer heartbeat at 1Hz continuously
         if current_time - self._last_heartbeat_sent > 1.0:
@@ -327,6 +345,13 @@ class FlightController:
                 except Exception:
                     pass
 
+            # Forward to SITL so the virtual drone changes mode
+            if self.sitl_connection and hasattr(self.sitl_connection, 'set_mode'):
+                try:
+                    self.sitl_connection.set_mode(mode_id)
+                except Exception:
+                    pass
+
             print(f"Requested flight mode change to: {mode} (ID: {mode_id})")
         else:
             print(f"Unknown flight mode: {mode}")
@@ -349,22 +374,26 @@ class FlightController:
         self.update()
         return self._local_position_ned
 
-    # Closes the telemetry output connection and resets related state flags
-    def _close_telemetry(self) -> None:
+    # Closes the SITL connection and resets related state flags
+    def _close_sitl(self) -> None:
         try:
-            self.telemetry_output.close()
+            self.sitl_connection.close()
         except Exception:
             pass
-        self.telemetry_output = None
+        self.sitl_connection = None
         # Reset SITL override flags so the physical Pixhawk data is used as fallback
         self._sitl_heartbeat_active = False
         self._sitl_alt_active = False
         self._sitl_pos_active = False
 
-    # Returns True if the telemetry socket has hit EOF (remote peer closed connection)
+    # Returns True if the telemetry socket has hit EOF (remote peer closed connection).
+    # pymavlink's mavtcp.handle_eof() calls reconnect() which is a no-op when
+    # autoreconnect=False, so no exception is ever raised — recv_match() silently
+    # returns None forever on a dead socket. We use select() + MSG_PEEK to detect
+    # this: if the fd is readable but a peek yields 0 bytes, the connection is gone.
     def _is_telemetry_dead(self) -> bool:
         try:
-            port = getattr(self.telemetry_output, 'port', None)
+            port = getattr(self.sitl_connection, 'port', None)
             if port is None:
                 return True  # port was already closed by pymavlink's failed reconnect
             fd = port.fileno()
@@ -415,6 +444,21 @@ class FlightController:
             except Exception:
                 pass  # Don't crash if telemetry link is down
 
+        # Forward to SITL so the virtual drone actually moves
+        if self.sitl_connection:
+            try:
+                self.sitl_connection.mav.set_position_target_local_ned_send(
+                    0, 1, 1,  # Target SITL system 1, component 1
+                    mavutil.mavlink.MAV_FRAME_BODY_NED,
+                    0b011111000111,
+                    0, 0, 0,
+                    vx, vy, vz,
+                    0, 0, 0,
+                    0, yaw_rate,
+                )
+            except Exception:
+                pass  # Don't crash if SITL link is down
+
     # Sends a stop command to the flight controller, setting all velocities and yaw rate to zero
     def send_stop(self) -> None:
         self.send_velocity(0.0, 0.0, 0.0, 0.0)
@@ -430,7 +474,7 @@ class FlightController:
                 0, 0, 0, 0, 0, 0, 0
             )
             
-        # Mirror the land command to telemetry_output (used by SITL simulation)
+        # Mirror the land command to telemetry_output (Mission Planner display)
         if self.telemetry_output:
             try:
                 self.telemetry_output.mav.command_long_send(
@@ -441,6 +485,18 @@ class FlightController:
                 )
             except Exception:
                 pass  # Don't crash if telemetry link is down
+
+        # Forward land command to SITL so the virtual drone lands
+        if self.sitl_connection:
+            try:
+                self.sitl_connection.mav.command_long_send(
+                    1, 1, # Target SITL system 1, component 1
+                    mavutil.mavlink.MAV_CMD_NAV_LAND,
+                    1, # confirmation
+                    0, 0, 0, 0, 0, 0, 0
+                )
+            except Exception:
+                pass  # Don't crash if SITL link is down
 
     # Sends a pitch command to the camera gimbal.
     def send_gimbal_pitch(self, pitch_deg: float) -> None:

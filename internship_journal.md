@@ -239,6 +239,32 @@ This journal is used to track daily progress, challenges, and solutions to help 
 - **The Non-Linearity of Vision-Based Distance**: A fundamental discovery was made regarding the use of bounding box Area as a proxy for Distance. Because Area is inversely proportional to the square of the Distance ($A \propto 1/D^2$), the mapping between physical distance error and area error is highly non-linear. At a close hovering distance (e.g., 0.6m), a 1.0m movement causes a massive 86% change in area. At a far hovering distance (10.0m), a 0.5m movement causes only a 10% change in area. Consequently, a linear PID controller tuned perfectly for close-range stability ($K_p = 0.3$) becomes 100x mathematically weaker and entirely sluggish at long ranges. This non-linearity proves that for advanced vision-based control, the distance signal must be linearized (e.g., estimating actual meters using $\sqrt{Area}$) rather than passing raw Area into a linear PID loop.
 - **Future Work - Image-Based Visual Servoing (IBVS)**: To solve the non-linearity of distance tracking without knowing the true physical size of the target, a "Virtual Distance" metric can be introduced. By taking the inverse square root of the bounding box area ($D_v = 1/\sqrt{Area}$), we obtain a signal that is perfectly linear with physical distance (i.e., $D_v \propto D_{physical}$). Calculating the error based on this virtual distance ($e = D_{v,target} - D_{v,current}$) ensures the tracking controller behaves uniformly at all distances. This elegantly eliminates the need for complex gain scheduling or noisy derivative (D) gains for non-linear stabilization, allowing a simple Proportional controller to track targets safely and consistently across the entire operating range.
 
+---
+
+## Week 7 (August 17 - August 23, 2026)
+
+### 🎯 Weekly Goals
+- [x] Fix the MAVLink telemetry mirroring issue so that Component 191 (Companion Computer) is visible in Mission Planner's Inspector during SITL and physical flight.
+- [x] Ensure simulated drone altitude and attitude remain in sync with the video stream overlay while SITL is running.
+
+### 📝 Daily Log
+
+#### Monday, August 17
+- **MAVLink Port Conflicts and Telemetry Architecture**:
+  - Investigated an issue where the velocity commands sent by the companion computer script were not visible in Mission Planner's MAVLink Inspector when running in SITL mode.
+  - **The Root Cause**: ArduPilot SITL consumes `SET_POSITION_TARGET_LOCAL_NED` messages internally to move the simulated drone but *does not echo* them back out to the Ground Control Station (GCS). Therefore, the companion computer must actively "mirror" these commands to Mission Planner to make them visible for debugging.
+  - **The TCP Localhost Issue**: The original mirroring approach used a TCP connection (`tcp:5762`), which failed over Tailscale because Windows Mission Planner instances often bind TCP SITL ports to `127.0.0.1`, blocking remote Jetson connections.
+  - **The "Double Duty" Bug**: When attempting to fix the port binding by switching the script's `telemetry_output` to a UDP port (`udpout:14550`), the video stream's altitude immediately desynced from the simulation. This revealed that the TCP `5762` connection was doing *bidirectional double duty*: it was used both to send mirrored commands to Mission Planner AND to receive the simulated drone's state (Altitude, Attitude, Position) back from SITL. Changing it to UDP broke the input side.
+
+- **The Solution (Triple-Connection Architecture)**:
+  - To properly separate concerns and fix both issues simultaneously, the `FlightController` was refactored to use three distinct MAVLink connections:
+    1. **`master` (UDP 14551)**: The primary command link to the flight controller. Used to send commands to the physical drone (or to SITL via MAVProxy).
+    2. **`sitl_connection` (TCP 5762)**: A conditionally active link (only when `sitl: true`). It connects directly to Mission Planner's SITL TCP server. It receives simulated altitude/attitude data so the script's overlay stays in sync. Velocity/Land/Mode commands are *forwarded* through this link so the simulated drone actually moves.
+    3. **`telemetry_output` (UDP 14550)**: An always-on, unidirectional mirror link to the Ground Station. The script broadcasts its own Component 191 Heartbeat and copies of all Velocity/Land commands out to this port. Since Mission Planner listens to UDP 14550 by default, this makes the companion computer's internal state perfectly visible in the MAVLink Inspector without requiring a separate Mission Planner window.
+
+### 💡 Notes for Final Report
+- **Bidirectional MAVLink Routing in SITL**: When developing companion computer software with Software-In-The-Loop (SITL), it is critical to decouple the *simulation data source* from the *telemetry monitoring output*. SITL simulators often expose TCP ports that provide simulated physical state but do not act as standard MAVLink routers that forward companion computer packets to the GCS UI. By architecting a dedicated UDP broadcast specifically for GCS inspection alongside a dedicated TCP connection for SITL state retrieval, developers can achieve full transparency into the companion computer's behavior without breaking the simulation loop.
+
 ## Final Week (August 24 - August 31, 2026)
 
 ### 🎯 Weekly Goals

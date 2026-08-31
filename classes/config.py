@@ -48,9 +48,11 @@ class MavlinkConfig:
     # Returns the MAVLink telemetry output string based on the SITL setting
     @property
     def telemetry_output(self) -> str:
-        if self.sitl:
-            return f"tcp:{self.ground_station_ip}:5762"
-        return f"udpout:{self.ground_station_ip}:14560"
+        return f"udpout:{self.ground_station_ip}:14550"
+
+    @property
+    def sitl_connection(self) -> str:
+        return f"tcp:{self.ground_station_ip}:5762"
 
 
 # Definition of the VideoLinkConfig class
