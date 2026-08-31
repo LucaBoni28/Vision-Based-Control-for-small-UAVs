@@ -1,0 +1,20 @@
+[Unit]
+Description=UAV Vision-Based Autonomous Control Mission Loop
+After=network.target network-online.target mavproxy.service
+Wants=network-online.target mavproxy.service
+
+[Service]
+ExecStartPre=/usr/bin/git -C /home/rtd/luca_boni/yolov26 checkout oop
+Type=simple
+User=rtd
+WorkingDirectory=/home/rtd/luca_boni/yolov26
+# -u enables unbuffered stdout/stderr so print statements appear live in journalctl logs
+ExecStart=/usr/bin/python3 -u main.py
+Restart=on-failure
+RestartSec=5s
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/rtd/.local/bin"
+Environment="LD_PRELOAD=/lib/aarch64-linux-gnu/libGLdispatch.so.0"
+
+[Install]
+WantedBy=multi-user.target

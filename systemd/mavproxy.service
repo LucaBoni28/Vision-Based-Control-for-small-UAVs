@@ -1,0 +1,17 @@
+[Unit]
+Description=MAVProxy Telemetry Router for ArduPilot
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rtd
+WorkingDirectory=/home/rtd/luca_boni/yolov26
+# Update --master device path and --out IP address if your hardware setup changes
+ExecStart=/home/rtd/.local/bin/mavproxy.py --daemon --master=/dev/ttyUSB0 --baudrate 921600 --out=udp:127.0.0.1:14551 --out=udp:100.112.124.116:14550
+Restart=on-failure
+RestartSec=3s
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/rtd/.local/bin"
+
+[Install]
+WantedBy=multi-user.target
