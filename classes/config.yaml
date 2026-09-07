@@ -5,8 +5,8 @@
 # Camera hardware settings
 camera:
   sensor_id: 0
-  width: 1280
-  height: 720
+  width: 1640
+  height: 1232
   framerate: 30
 
 # Connection settings for communicating with the flight controller
@@ -73,7 +73,7 @@ control:
 # Camera calibration and distance estimation parameters
 calibration:
   file: calibration.json               # File storing calibration data
-  desired_stopping_distance_m: 5       # Target distance to stop from the tracked object
+  desired_stopping_distance_m: 1       # Target distance to stop from the tracked object
   optical_constant: 108067.2           # Optical constant for distance estimation based on bounding box size
 
 # Mission behavior for auto-start and hover detection
@@ -84,11 +84,11 @@ mission_behavior:
 
 # Ground station video stream configuration
 display:
-  stream_width: 640                    # Width of the transmitted video stream
-  stream_height: 480                   # Height of the transmitted video stream
+  stream_width: 820                    # Width of the transmitted video stream (exactly half of 1640)
+  stream_height: 616                   # Height of the transmitted video stream (exactly half of 1232)
   jpeg_quality: 60                     # Quality of the JPEG compression for the video stream
-  ground_station_window_width: 1280    # GUI window width on ground station
-  ground_station_window_height: 720    # GUI window height on ground station
+  ground_station_window_width: 820     # GUI window width on ground station
+  ground_station_window_height: 616    # GUI window height on ground station
 
 # Target selection configuration
 # 'manual': click on the video stream to lock the target object
@@ -106,4 +106,4 @@ command_link:
 # 'gimbal_auto': disable software math - flight controller automatically aims gimbal
 # 'gimbal_manual': disable software math - RC controller manually adjusts camera pitch
 pitch_compensation:
-  mode: gimbal_manual
+  mode: gimbal_auto
