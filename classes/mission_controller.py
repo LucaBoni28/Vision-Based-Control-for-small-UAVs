@@ -98,6 +98,13 @@ class MissionController:
         else:
             print(f"[WARNING] Could not fetch MNT_STAB_TILT from Pixhawk. Falling back to config.yaml mode: {self.config.pitch_compensation.mode}")
 
+    # ── UI Helper ────────────────────────────────────────────────────────────
+    @staticmethod
+    def _draw_text(frame, text, pos, scale=1.0, color=(255, 255, 255), thickness=2):
+        """Draws text with a black outline for readability on any background."""
+        cv2.putText(frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), thickness + 3)
+        cv2.putText(frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness)
+
     def _reset_tracking_memory(self) -> None:
         """
         Clears the current locked target and resets the history needed for derivative calculations.
@@ -326,12 +333,11 @@ class MissionController:
                 self._process_frame(frame)
             else:
                 # If not tracking, just draw UI elements but DO NOT send velocity commands
-                cv2.putText(frame, f"State: {self._mission_state}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                self._draw_text(frame, f"State: {self._mission_state}", (10, 35), scale=1.0)
                 if current_alt is not None:
-                    cv2.putText(frame, f"Alt: {current_alt:.1f}m", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    self._draw_text(frame, f"Alt: {current_alt:.1f}m", (10, 70), scale=1.0)
                 if self._mission_state == "WAITING_GUIDED":
-                    cv2.putText(frame, "Switch to GUIDED to start mission",
-                                (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                    self._draw_text(frame, "Switch to GUIDED to start mission", (10, 105), scale=1.0)
                 
                 # Send the un-processed frame to the ground station
                 self._stream(frame)
@@ -528,24 +534,24 @@ class MissionController:
 
         # Draw FPS in the top right corner
         fps_text = f"FPS: {fps:.1f}"
-        font_scale = 1.3
-        font_thickness = 3
-        (fps_w, fps_h), _ = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thickness)
+        fps_scale = 1.3
+        fps_thickness = 3
+        (fps_w, fps_h), _ = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, fps_scale, fps_thickness)
         fps_x = frame.shape[1] - fps_w - 30
-        cv2.putText(frame, fps_text, (fps_x, 45), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 255), font_thickness)
+        self._draw_text(frame, fps_text, (fps_x, 45), scale=fps_scale, thickness=fps_thickness)
 
         # Draw Calibration State Overlays
         if self.distance_estimator.is_recording:
             # Show "REC" and sample count
-            cv2.circle(frame, (20, 22), 10, (0, 0, 255), -1)
-            cv2.putText(frame, "REC", (38, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-            cv2.putText(frame, f"Samples: {self.distance_estimator.sample_count}",
-                        (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.circle(frame, (20, 27), 12, (0, 0, 255), -1)
+            self._draw_text(frame, "REC", (40, 35), scale=1.0, color=(0, 0, 255))
+            self._draw_text(frame, f"Samples: {self.distance_estimator.sample_count}",
+                        (10, 70), scale=1.0, color=(0, 0, 255))
             if self._locked_id is None:
-                cv2.putText(frame, "WAITING FOR TARGET LOCK", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+                self._draw_text(frame, "WAITING FOR TARGET LOCK", (10, 105), scale=1.0, color=(0, 165, 255))
         else:
             # Show hint when not recording
-            cv2.putText(frame, "Press 'c' to calibrate", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            self._draw_text(frame, "Press 'c' to calibrate", (10, 35), scale=1.0)
 
         # Draw Warning if Calibration was rejected due to armed drone
         if time.time() < self._calibration_warning_until:

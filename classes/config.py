@@ -21,7 +21,6 @@ class CameraConfig:
     height: int
     framerate: int
 
-    # Builds the GStreamer pipeline string from the camera settings
     def gst_pipeline(self) -> str:
         return (
             f"nvarguscamerasrc sensor-id={self.sensor_id} ! "
@@ -29,8 +28,11 @@ class CameraConfig:
             f"framerate={self.framerate}/1, format=NV12 ! "
             "nvvidconv ! "
             "video/x-raw, format=BGRx ! "
+            "videorate ! "
+            f"video/x-raw, framerate={self.framerate}/1 ! "
             "videoconvert ! "
             "video/x-raw, format=BGR ! "
+            "queue max-size-buffers=1 leaky=downstream ! "
             "appsink"
         )
 

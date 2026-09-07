@@ -64,21 +64,24 @@ def main() -> None:
     # Initialize the distance estimator
     distance_estimator = DistanceEstimator(config.calibration)
 
-    # Initialize the camera source
+    # Initialize the camera source (do not open yet)
     camera = CSICameraSource(config.camera)
-    try:
-        camera.open()
-    except RuntimeError as e:
-        print(f"Error: {e}")
-        sys.exit(1)
 
-    # Create the mission controller and run the mission
+    # Create the mission controller
     try:
         mission = MissionController(
             config, camera, flight, streamer, tracker, target_selector,
             distance_estimator, detector, command_receiver,
             mjpeg_server=mjpeg_server,
         )
+        
+       # Open the camera
+        try:
+            camera.open()
+        except RuntimeError as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+            
         mission.run()
     finally:
         command_receiver.close()

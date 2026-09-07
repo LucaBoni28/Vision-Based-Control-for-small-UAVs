@@ -7,6 +7,8 @@
 
 from abc import ABC, abstractmethod             # Import abstract base class and abstract method decorators
 import cv2                                      # Import OpenCV for video capture and image processing
+import threading
+import time
 from classes.config import CameraConfig         # Import CameraConfig for configuration YAML file
 
 # Abstract base class for any camera source that can provide a stream of BGR frames to the MissionController
@@ -36,6 +38,11 @@ class CSICameraSource(CameraSource):
     def __init__(self, camera_config: CameraConfig):
         self._config = camera_config # Camera configuration from YAML file
         self._cap = None             # OpenCV video capture object
+        self._thread = None          # Background thread for consuming frames
+        self._running = False        # Flag to control the background thread
+        self._lock = threading.Lock()
+        self._latest_frame = None
+        self._latest_ret = False
 
     # Opens the CSI camera using a GStreamer pipeline defined in the configuration
     def open(self) -> None:
@@ -44,14 +51,40 @@ class CSICameraSource(CameraSource):
         self._cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
         if not self._cap.isOpened():
             raise RuntimeError("OpenCV cannot open the hardware camera stream.")
+            
+        # Read the first frame to verify it's working
+        self._latest_ret, self._latest_frame = self._cap.read()
+        
+        # Start the background thread to continuously consume frames.
+        # This prevents GStreamer buffers from overflowing when YOLO inference is slow.
+        self._running = True
+        self._thread = threading.Thread(target=self._update, daemon=True)
+        self._thread.start()
 
-    # Reads a frame from the CSI camera
+    # Background thread loop: continuously read frames from the camera
+    def _update(self) -> None:
+        while self._running:
+            if self._cap.isOpened():
+                ret, frame = self._cap.read()
+                with self._lock:
+                    self._latest_ret = ret
+                    self._latest_frame = frame
+            else:
+                time.sleep(0.01)
+
+    # Reads the most recent frame from the CSI camera
     def read(self):
-        return self._cap.read()
+        with self._lock:
+            if self._latest_frame is not None:
+                return self._latest_ret, self._latest_frame.copy()
+            return self._latest_ret, None
 
     # Releases the CSI camera
     # Safely shuts down the camera hardware, frees memory, and unlocks the device so other programs can use it
     def release(self) -> None:
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
         if self._cap is not None:
             self._cap.release()
 
