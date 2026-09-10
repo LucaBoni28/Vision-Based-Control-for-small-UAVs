@@ -61,7 +61,7 @@ master.mav.request_data_stream_send(
 )
 current_pitch_rad = 0
 
-# Control parameters (must match config.yaml / mission_controller.py)
+# Control parameters
 K_p_yaw = 0.84                   # Proportional gain for yaw rate
 K_d_yaw = 0.0                    # Derivative gain for yaw rate
 K_p_vz = 2.6                     # Proportional gain for vertical velocity
@@ -70,13 +70,13 @@ K_p_vx = 0.65                     # Proportional gain for forward velocity
 K_d_vx = 0.0                     # Derivative gain for forward velocity
 R_stop = 0.8                     # Stop ratio for v_x limiting
 
-# Deadzones (must match config.yaml / mission_controller.py)
-YAW_DEADZONE = 0.03              # Minimum yaw rate output to act upon
-VZ_DEADZONE = 0.03               # Minimum vz output to act upon
-DIST_DEADZONE = 0.10             # Minimum distance error to act upon
+# Deadzones
+YAW_DEADZONE = 0.06              # Minimum normalized horizontal error to act upon
+VZ_DEADZONE = 0.02               # Minimum normalized vertical error to act upon
+DIST_DEADZONE = 0.10             # Minimum distance error to act upon (meters)
 MAX_DERIVATIVE_DT = 0.5          # Maximum delta time for derivative calculation
 
-# Velocity limits (must match config.yaml / mission_controller.py)
+# Velocity limits
 MAX_VX = 1.5                     # Maximum forward velocity limit (m/s)
 MAX_VZ = 1.0                     # Maximum vertical velocity limit (m/s)
 MAX_YAW_RATE = 1.0               # Maximum yaw rate limit (rad/s)
@@ -309,10 +309,11 @@ while cap.isOpened():
             v_x_request = K_p_vx * e_dist_m + K_d_vx * derivative_dist_m
 
             # Deadzones & Safety Limits
-            # Deadzones prevent the drone from twitching when it's "close enough"
-            if abs(omega_z) < YAW_DEADZONE:
+            # Deadzones are applied to the error (not the velocity output) so that
+            # the physical deadzone size is independent of PID gain tuning.
+            if abs(e_x) < YAW_DEADZONE:
                 omega_z = 0
-            if abs(v_z) < VZ_DEADZONE:
+            if abs(e_y_compensated) < VZ_DEADZONE:
                 v_z = 0
             if abs(e_dist_m) < DIST_DEADZONE:
                 v_x_request = 0.0
