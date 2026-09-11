@@ -332,15 +332,22 @@ class MissionController:
                 # Process the frame for target detection and flight control
                 self._process_frame(frame)
             else:
-                # If not tracking, just draw UI elements but DO NOT send velocity commands
-                self._draw_text(frame, f"State: {self._mission_state}", (10, 35), scale=1.0)
-                if current_alt is not None:
-                    self._draw_text(frame, f"Alt: {current_alt:.1f}m", (10, 70), scale=1.0)
-                if self._mission_state == "WAITING_GUIDED":
-                    self._draw_text(frame, "Switch to GUIDED to start mission", (10, 105), scale=1.0)
+                # If not tracking, run detection for calibration if recording
+                if self.distance_estimator.is_recording:
+                    self._process_calibration_frame(frame)
+                else:
+                    # Just draw UI elements but DO NOT send velocity commands
+                    self._draw_text(frame, f"State: {self._mission_state}", (10, 35), scale=1.0)
+                    if current_alt is not None:
+                        self._draw_text(frame, f"Alt: {current_alt:.1f}m", (10, 70), scale=1.0)
+                    if self._mission_state == "WAITING_GUIDED":
+                        self._draw_text(frame, "Switch to GUIDED to start mission", (10, 105), scale=1.0)
+                    # Show calibration hint only when disarmed
+                    if not self.flight.is_armed():
+                        self._draw_text(frame, "Press 'c' to calibrate", (10, 140), scale=1.0)
                 
-                # Send the un-processed frame to the ground station
-                self._stream(frame)
+                    # Send the un-processed frame to the ground station
+                    self._stream(frame)
 
         # Cleanup when the loop ends
         self.camera.release()
@@ -358,6 +365,97 @@ class MissionController:
         self.streamer.send_frame(stream_frame, self.config.display.jpeg_quality)
         if self.mjpeg_server is not None:
             self.mjpeg_server.push_frame(stream_frame, self.config.display.jpeg_quality)
+
+    def _process_calibration_frame(self, frame) -> None:
+        """
+        Runs YOLO detection (without tracking) during calibration recording.
+        Only records samples when the target is centered in the frame, ensuring
+        the camera-to-object line is perpendicular (shortest distance).
+        """
+        img_h, img_w = frame.shape[:2]
+        center_x = img_w // 2
+        center_y = img_h // 2
+
+        # Centering tolerance: target must be within this fraction of the frame center
+        # 0.15 means within 15% of frame width/height from center
+        center_tolerance = 0.15
+        tol_px_x = int(img_w * center_tolerance)
+        tol_px_y = int(img_h * center_tolerance)
+
+        # Draw the acceptance zone (crosshair + rectangle)
+        zone_color = (255, 255, 255)  # White
+        # Center crosshair
+        cross_len = 20
+        cv2.line(frame, (center_x - cross_len, center_y), (center_x + cross_len, center_y), zone_color, 1)
+        cv2.line(frame, (center_x, center_y - cross_len), (center_x, center_y + cross_len), zone_color, 1)
+        # Acceptance rectangle
+        cv2.rectangle(frame,
+                      (center_x - tol_px_x, center_y - tol_px_y),
+                      (center_x + tol_px_x, center_y + tol_px_y),
+                      zone_color, 2)
+
+        # Calculate FPS for display
+        current_time = time.time()
+        fps = 1.0 / max(current_time - self._prev_time_fps, 1e-6)
+        self._prev_time_fps = current_time
+
+        # Run the standalone detector (not the tracker)
+        detections = self.detector.detect(frame)
+
+        # Draw all detected bounding boxes (yellow = not selected)
+        for det in detections:
+            x1, y1, x2, y2 = det.bbox
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 255), 2)
+            label = f"conf: {det.confidence:.2f}"
+            cv2.putText(frame, label, (int(x1), int(y1) - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+        # Check the largest detection for centering
+        sample_recorded = False
+        if detections:
+            largest = max(detections, key=lambda d: (d.bbox[2] - d.bbox[0]) * (d.bbox[3] - d.bbox[1]))
+            x1, y1, x2, y2 = largest.bbox
+            bb_cx = (x1 + x2) / 2
+            bb_cy = (y1 + y2) / 2
+
+            # Check if the bounding box center is within the acceptance zone
+            is_centered = (abs(bb_cx - center_x) <= tol_px_x and
+                           abs(bb_cy - center_y) <= tol_px_y)
+
+            if is_centered:
+                # Green: centered, sample recorded
+                area = (x2 - x1) * (y2 - y1)
+                self.distance_estimator.record_sample(area)
+                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 3)
+                sample_recorded = True
+            else:
+                # Orange: detected but too far off-center, sample skipped
+                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 165, 255), 3)
+
+        # Draw calibration overlays (REC indicator, sample count)
+        cv2.circle(frame, (20, 27), 12, (0, 0, 255), -1)
+        self._draw_text(frame, "REC", (40, 35), scale=1.0, color=(0, 0, 255))
+        self._draw_text(frame, f"Samples: {self.distance_estimator.sample_count}",
+                        (10, 70), scale=1.0, color=(0, 0, 255))
+
+        # Status messages
+        if not detections:
+            self._draw_text(frame, "NO DETECTIONS - Point camera at target", (10, 105),
+                            scale=1.0, color=(0, 165, 255))
+        elif not sample_recorded:
+            self._draw_text(frame, "CENTER THE TARGET in the box", (10, 105),
+                            scale=1.0, color=(0, 165, 255))
+
+        # Draw FPS
+        fps_text = f"FPS: {fps:.1f}"
+        fps_scale = 1.3
+        fps_thickness = 3
+        (fps_w, fps_h), _ = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, fps_scale, fps_thickness)
+        fps_x = frame.shape[1] - fps_w - 30
+        self._draw_text(frame, fps_text, (fps_x, 45), scale=fps_scale, thickness=fps_thickness)
+
+        # Stream the annotated frame
+        self._stream(frame)
 
     def _process_frame(self, frame) -> None:
         """
@@ -550,8 +648,9 @@ class MissionController:
             if self._locked_id is None:
                 self._draw_text(frame, "WAITING FOR TARGET LOCK", (10, 105), scale=1.0, color=(0, 165, 255))
         else:
-            # Show hint when not recording
-            self._draw_text(frame, "Press 'c' to calibrate", (10, 35), scale=1.0)
+            # Show hint only when drone is disarmed (calibration is blocked when armed)
+            if not self.flight.is_armed():
+                self._draw_text(frame, "Press 'c' to calibrate", (10, 35), scale=1.0)
 
         # Draw Warning if Calibration was rejected due to armed drone
         if time.time() < self._calibration_warning_until:

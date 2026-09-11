@@ -1,109 +1,74 @@
-# -----------------------------------------
-# Configuration file
-# -----------------------------------------
-
-# Camera hardware settings
 camera:
   sensor_id: 0
   width: 1640
   height: 1232
   framerate: 30
-
-# Connection settings for communicating with the flight controller
 mavlink:
-  connection: udpin:0.0.0.0:14551    # MAVProxy UDP stream for communication with the flight controller
-  # connection: /dev/ttyUSB0         # Direct serial communication with flight controller
-  baud: 921600                       # Baud rate - only used for direct serial connections
-  ground_station_ip: 100.112.124.116 # IP address of the ground control station
-  source_system: 1                   # MAVLink system ID for companion computer
-  source_component: 191              # MAVLink component ID
-  attitude_stream_rate_hz: 10        # Attitude Data Rate from the flight controller in Hz
-  sitl: true                         # True if running in Software In The Loop (SITL) simulation
-
-# TCP video streaming to the ground station
+  connection: udpin:0.0.0.0:14551
+  baud: 921600
+  ground_station_ip: 100.112.124.116
+  source_system: 1
+  source_component: 191
+  attitude_stream_rate_hz: 10
+  sitl: true
 video_link:
-  host: 100.112.124.116              # IP address of the ground station to stream the video
-  port: 5005                         # TCP port for video streaming
-
-# View the stream on any device (phone) at http://<jetson-ip>:<port>
+  host: 100.112.124.116
+  port: 5005
 mjpeg_server:
-  enabled: true                      # Set to false to disable the MJPEG HTTP server
-  port: 8080                         # HTTP server port
-
-# Object detection model settings
+  enabled: true
+  port: 8080
 model:
-  path: yolo26n.engine               # Path to the TensorRT optimized engine file
-  task: detect                       # Task type (detect, segment)
+  path: yolo26n.engine
+  task: detect
 detection:
   classes:
-    - 62                             # Class ID to detect (62 = tv monitor in COCO)
-  confidence: 0.65                   # Minimum confidence threshold for valid detections
-
-# Object tracking algorithm settings
+  - 62
+  confidence: 0.65
 tracker:
-  backend: bytetrack                 # Tracking backend (bytetrack, deepsort, botsort)
-  config_file: bytetrack.yaml        # Configuration file for the tracker - ignored for deepsort
-  max_timeout_frames: 50             # Maximum number of frames to wait before declaring a target lost
+  backend: bytetrack
+  config_file: bytetrack.yaml
+  max_timeout_frames: 50
   deepsort:
-    max_age: 50                      # Maximum frames to keep a track without matching
-    embedder: mobilenet              # Feature extractor model for DeepSORT
-    half: false                      # Half-precision (FP16) off
-    max_cosine_distance: 0.8         # Threshold for cosine distance matching
-    n_init: 1                        # Number of frames target must be seen to become active
-    max_iou_distance: 0.8            # Threshold for IoU matching
-
-# PID controller gains and deadzones for drone movement
+    max_age: 50
+    embedder: mobilenet
+    half: false
+    max_cosine_distance: 0.8
+    n_init: 1
+    max_iou_distance: 0.8
 control:
-  k_p_yaw: 0.84                        # yaw: proportional gain
-  k_d_yaw: 0.0                         # yaw: derivative gain
-  k_p_vz: 2.6                          # vz: proportional gain
-  k_d_vz: 0.0                          # vz: derivative gain
-  k_p_vx: 0.65                         # vx: proportional gain
-  k_d_vx: 0.0                          # vx: derivative gain
-  r_stop: 0.8                          # Safe radius threshold: forces forward speed to 0 if target is further off-center than thi
-  yaw_deadzone: 0.06                   # Minimum error in yaw
-  vz_deadzone: 0.02                    # Minimum error in vertical position
-  dist_deadzone: 0.10                  # Minimum error in distance (meters)
-  max_derivative_dt: 0.5               # Maximum delta time allowed for derivative calculation
-  hover_timeout: 10.0                  # Time (seconds) to wait in hover before fallback action (landing)
-  max_vx: 1.5                          # Maximum forward velocity limit (m/s)
-  max_vz: 1.0                          # Maximum vertical velocity limit (m/s)
-  max_yaw_rate: 1.0                    # Maximum yaw rate limit (rad/s)
-
-# Camera calibration and distance estimation parameters
+  k_p_yaw: 0.84
+  k_d_yaw: 0.0
+  k_p_vz: 2.6
+  k_d_vz: 0.0
+  k_p_vx: 0.65
+  k_d_vx: 0.0
+  r_stop: 0.8
+  yaw_deadzone: 0.06
+  vz_deadzone: 0.02
+  dist_deadzone: 0.1
+  max_derivative_dt: 0.5
+  hover_timeout: 10.0
+  max_vx: 1.5
+  max_vz: 1.0
+  max_yaw_rate: 1.0
 calibration:
-  file: calibration.json               # File storing calibration data
-  desired_stopping_distance_m: 1       # Target distance to stop from the tracked object
-  optical_constant: 108067.2           # Optical constant for distance estimation based on bounding box size
-
-# Mission behavior for auto-start and hover detection
+  file: calibration.json
+  desired_stopping_distance_m: 0.5
+  optical_constant: 297608.78206863324
 mission_behavior:
-  min_takeoff_alt_m: 5.0               # Minimum altitude (meters) to reach before checking for hover
-  hover_stability_time_s: 3.0          # How long (seconds) the drone must remain stable before allowing target tracking
-  hover_stability_threshold_m: 0.5     # Maximum altitude variation (meters) allowed to be considered "hovering"
-
-# Ground station video stream configuration
+  min_takeoff_alt_m: 5.0
+  hover_stability_time_s: 3.0
+  hover_stability_threshold_m: 0.5
 display:
-  stream_width: 820                    # Width of the transmitted video stream (exactly half of 1640)
-  stream_height: 616                   # Height of the transmitted video stream (exactly half of 1232)
-  jpeg_quality: 60                     # Quality of the JPEG compression for the video stream
-  ground_station_window_width: 1024    # GUI window width on ground station
-  ground_station_window_height: 768   # GUI window height on ground station
-
-# Target selection configuration
-# 'manual': click on the video stream to lock the target object
-# 'auto': lock onto the highest confidence object
+  stream_width: 820
+  stream_height: 616
+  jpeg_quality: 60
+  ground_station_window_width: 820
+  ground_station_window_height: 616
 target_selection:
   mode: auto
-
-# Command link configuration
 command_link:
-  jetson_host: 100.109.108.81 # IP address of the Jetson companion computer
-  port: 5006                  # UDP port for receiving commands from ground station
-
-# Handles camera pitch relative to drone pitch
-# 'software': applies mathematical compensation for camera pitch
-# 'gimbal_auto': disable software math - flight controller automatically aims gimbal
-# 'gimbal_manual': disable software math - RC controller manually adjusts camera pitch
+  jetson_host: 100.109.108.81
+  port: 5006
 pitch_compensation:
   mode: gimbal_auto
