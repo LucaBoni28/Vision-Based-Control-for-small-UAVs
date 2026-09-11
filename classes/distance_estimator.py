@@ -152,9 +152,6 @@ class DistanceEstimator:
         self.save(optical_constant, self._recording_distance_m, self._recorded_areas, rms_error_m)
         print(f"Saved calibration to {self._config.file}")
 
-        # Also update config.yaml with the new optical constant
-        self._update_config_yaml(optical_constant)
-
         # Update the target area based on new calibration
         self._recorded_areas = []
         return True
@@ -178,24 +175,3 @@ class DistanceEstimator:
         rms_error_m = math.sqrt(sum(squared_errors) / len(squared_errors))
 
         return k, rms_error_m
-
-    def _update_config_yaml(self, optical_constant: float) -> None:
-        """Update the optical_constant in config.yaml with the calibrated value."""
-        try:
-            import yaml
-            config_path = Path("classes/config.yaml")
-            if not config_path.exists():
-                config_path = Path("config.yaml")
-
-            with open(config_path, "r") as f:
-                config_data = yaml.safe_load(f)
-
-            if "calibration" in config_data:
-                config_data["calibration"]["optical_constant"] = optical_constant
-                
-                with open(config_path, "w") as f:
-                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-
-                print(f"Updated config.yaml with optical_constant = {optical_constant:.1f}")
-        except Exception as e:
-            print(f"Warning: Could not update config.yaml: {e}")
