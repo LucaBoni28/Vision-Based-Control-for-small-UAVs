@@ -40,14 +40,28 @@ pretty_names = {'bytetrack': 'ByteTrack', 'botsort': 'BoT-SORT', 'deepsort': 'De
 # =============================================================================
 # 1. HARDWARE STATISTICS PLOTTING (GPU, CPU | RAM, Power)
 # =============================================================================
-fig_hw1, axs_hw1 = plt.subplots(2, 1, figsize=(10, 8), sharex=True)  # For GPU & CPU
-fig_hw2, axs_hw2 = plt.subplots(2, 1, figsize=(10, 8), sharex=True)  # For RAM & Power
-
-hw_found = False
-for algo_name, color in zip(algorithms, colors):
+hw_dfs = {}
+for algo_name in algorithms:
     filename = os.path.join(log_dir, f'{algo_name}_hardware_stats.csv')
     try:
-        df_hw = pd.read_csv(filename) 
+        hw_dfs[algo_name] = pd.read_csv(filename)
+    except FileNotFoundError:
+        print(f"Notice: {filename} not found.")
+
+has_dla = any('DLA_Util_%' in df.columns for df in hw_dfs.values())
+num_compute_plots = 3 if has_dla else 2
+
+if hw_dfs:
+    fig_hw1, axs_hw1 = plt.subplots(num_compute_plots, 1, figsize=(10, 4*num_compute_plots), sharex=True)
+    if num_compute_plots == 1:
+        axs_hw1 = [axs_hw1]
+    
+    fig_hw2, axs_hw2 = plt.subplots(2, 1, figsize=(10, 8), sharex=True)  # For RAM & Power
+
+    for algo_name, color in zip(algorithms, colors):
+        if algo_name not in hw_dfs:
+            continue
+        df_hw = hw_dfs[algo_name]
         p_name = pretty_names[algo_name]
         
         if 'GPU_Util_%' in df_hw.columns:
@@ -57,6 +71,10 @@ for algo_name, color in zip(algorithms, colors):
         if 'CPU_Util_%' in df_hw.columns:
             avg_cpu = df_hw['CPU_Util_%'].mean()
             axs_hw1[1].plot(df_hw['Time_Sec'], df_hw['CPU_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_cpu:.1f}%)")
+            
+        if has_dla and 'DLA_Util_%' in df_hw.columns:
+            avg_dla = df_hw['DLA_Util_%'].mean()
+            axs_hw1[2].plot(df_hw['Time_Sec'], df_hw['DLA_Util_%'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_dla:.1f}%)")
         
         if 'RAM_Usage_%' in df_hw.columns:
             avg_ram = df_hw['RAM_Usage_%'].mean()
@@ -65,28 +83,30 @@ for algo_name, color in zip(algorithms, colors):
         if 'Power_TOT_mW' in df_hw.columns:
             avg_pwr = df_hw['Power_TOT_mW'].mean()
             axs_hw2[1].plot(df_hw['Time_Sec'], df_hw['Power_TOT_mW'], color=color, linewidth=1.5, alpha=0.8, label=f"{p_name} (Avg: {avg_pwr:.0f} mW)")
-            
-        hw_found = True
-    except FileNotFoundError:
-        print(f"Notice: {filename} not found.")
 
-if hw_found:
     # --- GPU & CPU Plot ---
     axs_hw1[0].set_ylabel('GPU Util [%]')
     axs_hw1[0].set_title('Compute Utilization Across Tracking Algorithms')
     axs_hw1[0].grid(True, linestyle=':', alpha=0.7)
     axs_hw1[0].legend(loc='upper right', fontsize=10)
 
-    axs_hw1[1].set_xlabel('Time [s]')
     axs_hw1[1].set_ylabel('CPU Util [%]')
     axs_hw1[1].grid(True, linestyle=':', alpha=0.7)
     axs_hw1[1].legend(loc='upper right', fontsize=10)
+    
+    if has_dla:
+        axs_hw1[2].set_xlabel('Time [s]')
+        axs_hw1[2].set_ylabel('DLA Util [%]')
+        axs_hw1[2].grid(True, linestyle=':', alpha=0.7)
+        axs_hw1[2].legend(loc='upper right', fontsize=10)
+    else:
+        axs_hw1[1].set_xlabel('Time [s]')
 
     plt.figure(fig_hw1.number)
     plt.tight_layout()
     out_path1 = os.path.join(plot_dir, 'hardware_compute_stats.png')
     plt.savefig(out_path1, format='png', dpi=300)
-    print(f"Hardware compute stats (GPU & CPU) plot saved: {out_path1}")
+    print(f"Hardware compute stats plot saved: {out_path1}")
 
     # --- RAM & Power Plot ---
     axs_hw2[0].set_ylabel('RAM Usage [%]')
@@ -115,6 +135,7 @@ avg_fps_algo = {}
 id_switches = {}
 avg_latency = {}
 avg_jitter = {}
+mtbs = {}
 trackers_found = []
 benchmark_dfs = {}  # Store DataFrames for time-series plots
 
@@ -147,6 +168,11 @@ for algo_name in algorithms:
         valid_ids = df_bench[df_bench['Object_ID'] != -1]['Object_ID']
         switches = (valid_ids != valid_ids.shift()).sum() - 1  # first entry is not a switch
         id_switches[p_name] = max(0, int(switches))
+        
+        # Calculate Mean Time Between Switches (MTBS)
+        total_tracked_frames = len(valid_ids)
+        tracked_time_sec = total_tracked_frames / avg_fps_sys[p_name] if avg_fps_sys.get(p_name, 0) > 0 else 0
+        mtbs[p_name] = tracked_time_sec / (id_switches[p_name] + 1)
         
         # Calculate Bounding Box Jitter (average pixel movement per frame when target is found)
         valid_boxes = df_bench[df_bench['Object_ID'] != -1]
@@ -214,21 +240,21 @@ if trackers_found:
     plt.savefig(out_path, format='png', dpi=300)
     print(f"Benchmark averages (FPS & Latency) saved: {out_path}")
 
-    # Image 2: ID Switches | Jitter (side-by-side)
-    fig_avg2, (ax_ids, ax_jit) = plt.subplots(1, 2, figsize=(12, 5))
+    # Image 2: MTBS | Jitter (side-by-side)
+    fig_avg2, (ax_mtbs, ax_jit) = plt.subplots(1, 2, figsize=(12, 5))
 
-    bars_ids = ax_ids.bar(x_pos, [id_switches[t] for t in trackers_found],
+    bars_mtbs = ax_mtbs.bar(x_pos, [mtbs[t] for t in trackers_found],
                           color=colors_bench[:len(trackers_found)], width=0.5)
-    max_ids = max([id_switches[t] for t in trackers_found] + [1])
-    ax_ids.set_ylim(0, max_ids * 1.15)
-    ax_ids.set_xticks(list(x_pos))
-    ax_ids.set_xticklabels(trackers_found)
-    ax_ids.set_ylabel('ID Switches')
-    ax_ids.set_title('Tracking ID Switch Comparison')
-    ax_ids.grid(True, axis='y', linestyle=':', alpha=0.7)
-    for bar, val in zip(bars_ids, [id_switches[t] for t in trackers_found]):
-        ax_ids.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.1,
-                    f'{val}', ha='center', va='bottom', fontweight='bold')
+    max_mtbs = max([mtbs[t] for t in trackers_found] + [1])
+    ax_mtbs.set_ylim(0, max_mtbs * 1.15)
+    ax_mtbs.set_xticks(list(x_pos))
+    ax_mtbs.set_xticklabels(trackers_found)
+    ax_mtbs.set_ylabel('Mean Time Between Switches [s]')
+    ax_mtbs.set_title('Mean Time to Track Loss (Higher is Better)')
+    ax_mtbs.grid(True, axis='y', linestyle=':', alpha=0.7)
+    for bar, val in zip(bars_mtbs, [mtbs[t] for t in trackers_found]):
+        ax_mtbs.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.5,
+                    f'{val:.1f}', ha='center', va='bottom', fontweight='bold')
 
     bars_jit = ax_jit.bar(x_pos, [avg_jitter[t] for t in trackers_found],
                           color=colors_bench[:len(trackers_found)], width=0.5)
@@ -245,9 +271,9 @@ if trackers_found:
 
     plt.figure(fig_avg2.number)
     plt.tight_layout()
-    out_path = os.path.join(plot_dir, 'benchmark_avg_id_switches_jitter.png')
+    out_path = os.path.join(plot_dir, 'benchmark_avg_mtbs_jitter.png')
     plt.savefig(out_path, format='png', dpi=300)
-    print(f"Benchmark averages (ID Switches & Jitter) saved: {out_path}")
+    print(f"Benchmark averages (MTBS & Jitter) saved: {out_path}")
 
 # --- 2b: Time-Series Line Plots (side-by-side) ---
 if benchmark_dfs:
@@ -405,7 +431,7 @@ for algo_name in algorithms:
         axs_dist[0].legend(loc='upper right')
 
         # 2. Yaw Rate
-        axs_dist[1].plot(df_dist['Time_Sec'], df_dist['omega_z'], color='orange', linewidth=1.5, label='Yaw Rate ($\\omega_z$)')
+        axs_dist[1].plot(df_dist['Time_Sec'], df_dist['omega_z'], color='orange', linewidth=1.5, label=r'Yaw Rate ($\omega_z$)')
         axs_dist[1].axhline(0, color='black', linestyle='--', linewidth=1, alpha=0.8)
         axs_dist[1].set_ylabel('Ang. Vel [rad/s]')
         axs_dist[1].grid(True, linestyle=':', alpha=0.7)
@@ -452,27 +478,27 @@ STEP_AXES = {
     'yaw': {
         'error_col': 'e_x',
         'velocity_col': 'omega_z',
-        'error_label': '$e_x$ (Horizontal Error)',
-        'velocity_label': '$\\omega_z$ (Yaw Rate)',
-        'error_ylabel': 'Normalized Error $e_x$',
+        'error_label': r'$e_x$ (Horizontal Error)',
+        'velocity_label': r'$\omega_z$ (Yaw Rate)',
+        'error_ylabel': r'Normalized Error $e_x$',
         'velocity_ylabel': 'Yaw Rate [rad/s]',
         'title': 'Yaw PD Controller Step Response',
     },
     'altitude': {
         'error_col': 'e_y',
         'velocity_col': 'v_z',
-        'error_label': '$e_y$ (Vertical Error)',
-        'velocity_label': '$v_z$ (Vertical Velocity)',
-        'error_ylabel': 'Normalized Error $e_y$',
+        'error_label': r'$e_y$ (Vertical Error)',
+        'velocity_label': r'$v_z$ (Vertical Velocity)',
+        'error_ylabel': r'Normalized Error $e_y$',
         'velocity_ylabel': 'Vertical Velocity [m/s]',
         'title': 'Altitude PD Controller Step Response',
     },
     'distance': {
         'error_col': 'e_area',
         'velocity_col': 'v_x',
-        'error_label': '$e_{area}$ (Area Error)',
-        'velocity_label': '$v_x$ (Forward Velocity)',
-        'error_ylabel': 'Normalized Error $e_{area}$',
+        'error_label': r'$e_{area}$ (Area Error)',
+        'velocity_label': r'$v_x$ (Forward Velocity)',
+        'error_ylabel': r'Normalized Error $e_{area}$',
         'velocity_ylabel': 'Forward Velocity [m/s]',
         'title': 'Distance PD Controller Step Response',
     },
@@ -503,7 +529,7 @@ try:
         # Settling band (+/- 2% of step size)
         step_size = error_data.iloc[0]  # First value = step magnitude
         settling_band = 0.02 * abs(step_size)
-        axs_sr[0].axhspan(-settling_band, settling_band, alpha=0.15, color='green', label=f'$\\pm$2% Settling Band')
+        axs_sr[0].axhspan(-settling_band, settling_band, alpha=0.15, color='green', label=r'$\pm$2% Settling Band')
 
         # Overshoot
         min_ex = error_data.min()

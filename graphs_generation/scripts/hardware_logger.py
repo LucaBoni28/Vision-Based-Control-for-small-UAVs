@@ -34,7 +34,7 @@ with jtop() as jetson:
         with open(filename, 'w', newline='') as f:
             writer = csv.writer(f)
             # Define the CSV headers
-            writer.writerow(['Time_Sec', 'GPU_Util_%', 'CPU_Util_%', 'RAM_Usage_%', 'Power_TOT_mW'])
+            writer.writerow(['Time_Sec', 'GPU_Util_%', 'CPU_Util_%', 'RAM_Usage_%', 'Power_TOT_mW', 'DLA_Util_%'])
             
             start_time = time.time()
             
@@ -64,8 +64,13 @@ with jtop() as jetson:
                     ram = jetson.stats.get('RAM', 0)
                     power = jetson.stats.get('Power TOT', 0) # Total board power consumption
                     
+                    # DLA Util
+                    dla0 = jetson.stats.get('DLA0', 0)
+                    dla1 = jetson.stats.get('DLA1', 0)
+                    dla_val = max(dla0, dla1)
+                    
                     # Log to CSV
-                    writer.writerow([f"{current_time:.1f}", gpu, f"{cpu_avg:.1f}", ram, power])
+                    writer.writerow([f"{current_time:.1f}", gpu, f"{cpu_avg:.1f}", ram, power, dla_val])
                     
                     # Force write to disk so data isn't lost if you abruptly kill the script
                     f.flush() 
