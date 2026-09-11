@@ -200,7 +200,7 @@ This journal is used to track daily progress, challenges, and solutions to help 
   - Unlike Yaw, P-only controllers for Altitude and Distance resulted in unacceptable and dangerous overshoot (e.g., oscillating past the target altitude or flying past the target distance).
 - **The D-Gain Dilemma (Safety vs. Noise)**:
   - **Yaw (Horizontal)**: Overshoot is acceptable because passing the target horizontally simply requires a turn to correct; it doesn't cause a crash. Therefore, P-only is fine and avoids noise amplification.
-  - **Altitude (Vertical) & Distance (Forward)**: Overshoot is catastrophic. An altitude overshoot means crashing into the ground, and a distance overshoot means ramming into the tracked target. Therefore, **D-gain is absolutely mandatory** to provide the necessary damping and braking force as the drone approaches the target state.
+  - **Altitude (Vertical) & Distance (Forward)**: Overshoot is potentially dangerous. An altitude overshoot risks crashing into the ground, and a distance overshoot risks approaching the tracked target too aggressively. In theory, D-gain would provide the necessary damping and braking force as the drone approaches the target state. However, due to the noise amplification issue described below, we ultimately opted for carefully tuned P-only gains that accept a small, safe amount of overshoot rather than introducing noisy derivative commands.
   - **The Problem**: Using D-gain on these axes re-introduces the severe noise amplification problem caused by raw vision bounding box jitter, creating "spiky" velocity commands that will wear out motors or destabilize the flight controller.
 - **Future Mitigation Strategies Discussed**:
   - To safely utilize D-gain without amplifying noise, two primary solutions were identified:
@@ -265,7 +265,7 @@ This journal is used to track daily progress, challenges, and solutions to help 
 ### 💡 Notes for Final Report
 - **Bidirectional MAVLink Routing in SITL**: When developing companion computer software with Software-In-The-Loop (SITL), it is critical to decouple the *simulation data source* from the *telemetry monitoring output*. SITL simulators often expose TCP ports that provide simulated physical state but do not act as standard MAVLink routers that forward companion computer packets to the GCS UI. By architecting a dedicated UDP broadcast specifically for GCS inspection alongside a dedicated TCP connection for SITL state retrieval, developers can achieve full transparency into the companion computer's behavior without breaking the simulation loop.
 
-## Final Week (August 24 - August 31, 2026)
+## Week 8 (August 24 - August 30, 2026)
 
 ### 🎯 Weekly Goals
 - [x] Complete comprehensive codebase review and documentation pass.
@@ -282,3 +282,66 @@ This journal is used to track daily progress, challenges, and solutions to help 
 
 ### 💡 Notes for Final Report
 - **The Value of Codebase Ownership**: Refactoring the codebase into a modular OOP structure in Week 1, and subsequently dedicating a full week at the end of the internship to meticulously comment and review every module, was critical. It transformed the project from a fragile prototype into a maintainable, deployment-ready system. The clear separation of concerns (Vision -> Estimation -> Control -> Flight) not only made the system easier to test via SITL, but also ensures that future teams can seamlessly swap out components without breaking the flight control logic.
+
+---
+
+## Week 9 (August 31 - September 6, 2026)
+
+### 🎯 Weekly Goals
+- [x] Finalize system-level deployment (systemd).
+- [x] Conduct full system testing to identify and resolve any lingering errors.
+- [x] Continue drafting the internship report and updating the daily journal.
+
+### 📝 Daily Log
+- **Systemd Integration**: Finalized the `systemd` folder, adding service files (`tailscaled`, `mavproxy`, `yolov26`) to ensure the Jetson boots headlessly and is instantly ready for field testing.
+- **System Testing & Documentation**: Spent the remainder of the week running end-to-end tests on the complete system to ensure reliability. Simultaneously worked on writing the internship report and keeping the journal updated.
+
+---
+
+## Week 10 (September 7 - September 13, 2026)
+
+### 🎯 Weekly Goals
+- [x] Finalize the first draft of the internship thesis report.
+- [x] Refine physical camera interactions (GStreamer pipelines).
+- [x] Polish control logic mathematically for final handover.
+- [x] Continuous full system testing.
+
+### 📝 Daily Log
+
+#### Monday, September 7
+- **Internship Report**: Completed and committed the first full draft of the internship report (`internship_report.md`), detailing the architecture, SITL testing methodologies (Bode plots, step responses), and the non-linear dynamics of vision-based control.
+- **GStreamer & Camera Fixes**: 
+  - **The Problem**: The main control loop was experiencing `TIMEOUT` crashes.
+  - **The Fix**: Decoupled OpenCV from the Jetson camera hardware. Restructured the GStreamer pipeline to prevent OpenCV from blocking the hardware buffer. Additionally, fixed the video stream aspect ratio to ensure accurate coordinate mapping.
+- **Pitch Compensation Adjustment**: Updated the `MNT1_STAB_TILT` parameter handling for dynamic pitch compensation checks.
+
+#### Thursday, September 10
+- **Deadzone Logic Refactoring**: 
+  - **The Context**: This modification was implemented and committed directly to the `master` branch.
+  - **The Issue**: Deadzones were previously applied to the final velocity outputs (`omega_z`, `v_z`), which meant their physical size changed depending on the PID gain tuning.
+  - **The Fix**: Refactored the control loop in `tracking.py` to apply the deadzones directly to the normalized error signals (`e_x`, `e_y_compensated`). This decoupling ensures that the physical size of the deadzones remains independent of the PID gain tuning, providing more consistent tracking behavior.
+
+#### Friday, September 11
+- **Tracking Benchmarking Metrics Clarification**: 
+  - Analyzed the benchmarking codebase (`plotter.py` and `mission_controller.py`) to clarify the difference between the "Overall System FPS Comparison" and the "Pipeline Latency Comparison" graphs.
+  - **System FPS**: Calculated as the inverse of the total wall-clock time between processing loops. It represents the end-to-end throughput of the entire system, including frame acquisition, video streaming, control computation, and UI rendering.
+  - **Pipeline Latency**: Measures only the time spent in the perception pipeline (`tracker.track(frame)`, which internally runs YOLO detection and tracking association).
+  - This explains why the System FPS is not simply the inverse of the Pipeline Latency, as the former includes significant system-level overhead.
+
+#### Remainder of the Week
+- Dedicated to rigorous testing of the entire software stack to catch any pop-up errors and refining the final thesis documentation.
+
+### 💡 Notes for Final Report
+- **Mathematical Rigor in Deadzones**: Applying thresholds to error signals rather than velocity outputs is a fundamental best practice for control systems. It mathematically guarantees that the "ignore radius" around the target is purely a function of camera geometry, rather than an arbitrary velocity limit that requires re-tuning whenever the PID gains change.
+
+---
+
+## Week 11 - Final Days (September 14 - September 15, 2026)
+
+### 🎯 Goals
+- [x] Official conclusion of the internship on September 15th.
+- [x] Final project handover and submission of all documentation.
+
+### 📝 Log
+- Conducted final run-throughs and tests of the entire system to ensure a smooth handover.
+- Addressed any final minor errors and wrapped up the internship report and diary for official submission.
